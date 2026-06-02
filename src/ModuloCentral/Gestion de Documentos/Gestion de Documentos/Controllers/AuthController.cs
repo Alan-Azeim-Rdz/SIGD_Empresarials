@@ -94,7 +94,54 @@ namespace Gestion_de_Documentos.Controllers
 
                 await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
 
+                // --- REGISTRAR BITACORA DE ACCESO ---
+                try
+                {
+                    var ip = GetClientIpAddress();
+
+                    var bitacora = new BitacoraAcceso
+                    {
+                        IdUsuario = usuario.Id,
+                        FechaHoraIntento = DateTime.Now,
+                        DireccionIp = ip,
+                        EstadoIntento = "EXITOSO",
+                        Estatus = true,
+                        IdUsuarioCreacion = usuario.Id
+                    };
+                    _context.BitacoraAccesos.Add(bitacora);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception)
+                {
+                    // Evitar que un error de auditoría interrumpa el inicio de sesión
+                }
+
                 return RedirectToAction("Index", "Home");
+            }
+
+            // Si el usuario existe pero la contraseña falló, registramos el intento fallido
+            if (usuario != null)
+            {
+                try
+                {
+                    var ip = GetClientIpAddress();
+
+                    var bitacora = new BitacoraAcceso
+                    {
+                        IdUsuario = usuario.Id,
+                        FechaHoraIntento = DateTime.Now,
+                        DireccionIp = ip,
+                        EstadoIntento = "FALLIDO",
+                        Estatus = true,
+                        IdUsuarioCreacion = usuario.Id
+                    };
+                    _context.BitacoraAccesos.Add(bitacora);
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception)
+                {
+                    // Evitar que un error de auditoría interrumpa la respuesta del controlador
+                }
             }
 
             ViewBag.Error = "El Username o la contraseña son incorrectos.";
@@ -450,6 +497,28 @@ namespace Gestion_de_Documentos.Controllers
                 }
                 return builder.ToString();
             }
+        }
+
+        // --- OBTENER IP DEL CLIENTE ---
+        private string GetClientIpAddress()
+        {
+            var ip = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (string.IsNullOrEmpty(ip))
+            {
+                ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+            }
+            else
+            {
+                // X-Forwarded-For puede contener múltiples IPs separadas por coma
+                ip = ip.Split(',').FirstOrDefault()?.Trim();
+            }
+
+            if (ip == "::1") ip = "127.0.0.1";
+            if (!string.IsNullOrEmpty(ip) && ip.StartsWith("::ffff:"))
+            {
+                ip = ip.Substring(7);
+            }
+            return ip ?? "127.0.0.1";
         }
 
         // --- REGISTRO DE EMPRESA (PÚBLICO) ---

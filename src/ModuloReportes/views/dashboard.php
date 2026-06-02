@@ -510,7 +510,7 @@ fetch(`${BASE}?action=api_docs_por_depto`)
     .then(r => r.json())
     .then(rows => {
         if (rows.error) return;
-        const labels = rows.map(r => `Depto ${r.departamento}`);
+        const labels = rows.map(r => r.departamento);
         const data   = rows.map(r => parseInt(r.total));
         new Chart(document.getElementById('chartDepto'), {
             type: 'doughnut',
@@ -588,7 +588,7 @@ fetch(`${BASE}?action=api_recientes`)
                 <td><span class="badge-version">${doc.codigo_interno}</span></td>
                 <td>${doc.titulo}</td>
                 <td><span class="badge-version">v${doc.version_actual}</span></td>
-                <td><span class="badge-depto">Depto ${doc.id_departamento}</span></td>
+                <td><span class="badge-depto">${doc.nombre_departamento || ('Depto ' + doc.id_departamento)}</span></td>
                 <td style="color:var(--text-muted)">${doc.fecha_formateada}</td>
             </tr>
         `).join('');
@@ -598,6 +598,7 @@ fetch(`${BASE}?action=api_recientes`)
             '<tr><td colspan="5" class="text-center" style="color:var(--text-muted)">Error cargando datos</td></tr>';
     });
 </script>
+
 
     <!-- Modal Configuración de Conexiones -->
     <div class="modal fade" id="modalConexiones" tabindex="-1" aria-labelledby="modalConexionesLabel" aria-hidden="true">

@@ -1,5 +1,6 @@
 @{
     ViewData["Title"] = "Dashboard de Reportes";
+    var esAdmin = User.IsInRole("Administrador") || User.IsInRole("Auditor") || User.IsInRole("Superior") || User.IsInRole("Super Administrador");
 }
 
 <!-- Chart.js desde CDN -->
@@ -237,9 +238,49 @@
     </div>
 </div>
 
+<!-- Modal Detalle de Cumplimiento -->
+<div class="modal fade" id="modalCumplimiento" tabindex="-1" aria-labelledby="modalCumplimientoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="modalCumplimientoLabel"><i class="fas fa-user-check me-2" style="color: var(--warning);"></i>Detalle de Cumplimiento de Lectura</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="mb-3 text-muted" id="cumplimiento-doc-titulo" style="font-weight:500;">Documento: </h6>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" style="border: 1px solid var(--border); background-color: var(--bg-surface);">
+                        <thead>
+                            <tr style="background: var(--bg-raised);">
+                                <th style="color: var(--text-muted); font-weight:600; padding:10px 15px; text-transform: uppercase; font-size: 0.78rem;">Operario</th>
+                                <th style="color: var(--text-muted); font-weight:600; padding:10px 15px; text-transform: uppercase; font-size: 0.78rem;">Correo</th>
+                                <th style="color: var(--text-muted); font-weight:600; padding:10px 15px; text-transform: uppercase; font-size: 0.78rem;">Estatus</th>
+                                <th style="color: var(--text-muted); font-weight:600; padding:10px 15px; text-transform: uppercase; font-size: 0.78rem;">Fecha Lectura</th>
+                                <th style="color: var(--text-muted); font-weight:600; padding:10px 15px; text-transform: uppercase; font-size: 0.78rem;">IP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cumplimiento-tabla-body">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted" style="padding:20px;">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>Cargando...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     'use strict';
+
+    const ES_ADMIN = @(esAdmin ? "true" : "false");
 
     let chartBarras   = null;
     let chartLinea    = null;
@@ -291,7 +332,7 @@
         const ctx = document.getElementById(canvasId).getContext('2d');
         if (chartBarras) { chartBarras.destroy(); }
 
-        const labels = datos.map(d => `Depto ${d.departamento}`);
+        const labels = datos.map(d => d.departamento);
         const values = datos.map(d => parseInt(d.total));
 
         chartBarras = new Chart(ctx, {
@@ -356,19 +397,37 @@
         });
     }
 
+    function escJS(s) {
+        return String(s ?? '').replace(/'/g, "\\'");
+    }
+
     // ── Render tabla de recientes ─────────────────────────────────────────────
     function renderRecientes(docs) {
         if (!docs.length) {
             return `<div style="padding:2rem;text-align:center;color:#94a3b8;">Sin actividad reciente.</div>`;
         }
-        const filas = docs.map(d => `
+        const filas = docs.map(d => {
+            let accionHtml = '';
+            if (ES_ADMIN) {
+                accionHtml = `
+                    <td>
+                        <button class="btn btn-outline-primary btn-sm py-1 px-2" onclick="verCumplimiento(${d.id_documento}, '${escJS(d.titulo)}')">
+                            <i class="fas fa-user-check me-1"></i> Cumplimiento
+                        </button>
+                    </td>`;
+            }
+            return `
             <tr>
                 <td><code style="font-size:.8rem;">${esc(d.codigo_interno)}</code></td>
                 <td><strong>${esc(d.titulo)}</strong></td>
                 <td><span class="badge-version">v${parseInt(d.version_actual)}</span></td>
-                <td><span class="badge-depto">Depto ${parseInt(d.id_departamento)}</span></td>
+                <td><span class="badge-depto">${esc(d.nombre_departamento || ('Depto ' + d.id_departamento))}</span></td>
                 <td style="color:#94a3b8;font-size:.8rem;">${esc(d.fecha_formateada)}</td>
-            </tr>`).join('');
+                ${accionHtml}
+            </tr>`;
+        }).join('');
+
+        const headerAccion = ES_ADMIN ? '<th>Acciones</th>' : '';
 
         return `
             <table class="recent-table">
@@ -379,6 +438,7 @@
                         <th>Versión</th>
                         <th>Departamento</th>
                         <th>Publicado</th>
+                        ${headerAccion}
                     </tr>
                 </thead>
                 <tbody>${filas}</tbody>
@@ -447,6 +507,51 @@
                 </button>
             </div>`;
     }
+
+    window.verCumplimiento = function(idDoc, titulo) {
+        if (!ES_ADMIN) return;
+        document.getElementById('cumplimiento-doc-titulo').textContent = `Documento: ${titulo}`;
+        const tbody = document.getElementById('cumplimiento-tabla-body');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding:20px;"><i class="fas fa-spinner fa-spin me-2"></i>Cargando detalle de cumplimiento...</td></tr>';
+        
+        const modal = new bootstrap.Modal(document.getElementById('modalCumplimiento'));
+        modal.show();
+
+        fetch(`/Modulos/ApiCumplimientoDetalle?id_doc=${idDoc}`, { credentials: 'same-origin' })
+            .then(r => {
+                if (r.status === 401 || r.status === 403) {
+                    throw new Error("No tienes autorización para ver estos detalles.");
+                }
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(res => {
+                if (res.status !== 'ok') throw new Error(res.message ?? 'Respuesta inválida');
+                const users = res.data || [];
+                if (!users.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding:20px;">No hay personal registrado en el departamento de este documento.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = users.map(u => {
+                    const estatusHtml = u.leido === true || u.leido === 'true' || u.leido === 1
+                        ? '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Leído</span>'
+                        : '<span class="badge bg-danger"><i class="fas fa-clock me-1"></i>Pendiente</span>';
+                    return `
+                        <tr>
+                            <td style="padding:10px 15px; color: var(--text);">${esc(u.nombre)} ${esc(u.apellido_p)}</td>
+                            <td style="padding:10px 15px; color: var(--text);">${esc(u.correo)}</td>
+                            <td style="padding:10px 15px;">${estatusHtml}</td>
+                            <td style="padding:10px 15px; color: var(--text-muted);">${esc(u.fecha_formateada || '—')}</td>
+                            <td style="padding:10px 15px; color: var(--text-muted);">${esc(u.direccion_ip || '—')}</td>
+                        </tr>
+                    `;
+                }).join('');
+            })
+            .catch(err => {
+                console.error("Error loading compliance:", err);
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger" style="padding:20px;"><i class="fas fa-exclamation-triangle me-1"></i>${esc(err.message)}</td></tr>`;
+            });
+    };
 
     // ── API pública ───────────────────────────────────────────────────────────
     window.dashApp = {

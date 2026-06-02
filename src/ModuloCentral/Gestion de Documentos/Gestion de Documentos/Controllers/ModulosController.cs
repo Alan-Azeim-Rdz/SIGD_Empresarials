@@ -95,6 +95,15 @@ namespace Gestion_de_Documentos.Controllers
             return await ProxyGetAsync($"/api/v1/dashboard.php?action=cumplimiento&id_depto={id_depto}&id_empresa={empresaId}");
         }
 
+        // ─── Proxy: Dashboard cumplimiento detalle por documento (sólo Admin/Auditor/Superior) ────────────────
+        [HttpGet]
+        [Authorize(Roles = "Administrador,Auditor,Superior,Super Administrador")]
+        public async Task<IActionResult> ApiCumplimientoDetalle([FromQuery] int id_doc)
+        {
+            var empresaId = GetCurrentUserEmpresaId();
+            return await ProxyGetAsync($"/api/v1/dashboard.php?action=cumplimiento_detalle&id_doc={id_doc}&id_empresa={empresaId}");
+        }
+
         // ─── Proxy: Acuse de lectura (POST) ──────────────────────────────────
         [HttpPost]
         public async Task<IActionResult> ApiAcuse([FromBody] System.Text.Json.JsonElement payload)

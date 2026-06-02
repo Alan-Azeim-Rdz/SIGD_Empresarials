@@ -40,7 +40,24 @@ for i in $(seq 1 $MAX_RETRIES); do
                 echo "[INIT] ❌ Error al ejecutar el script de inicialización."
             fi
         else
-            echo "[INIT] ✅ Base de datos SIGD_Central ya existe. No se re-ejecuta."
+            echo "[INIT] ✅ Base de datos SIGD_Central ya existe."
+            
+            # Verificar si faltan los datos semilla (empresa techcorp)
+            SEED_EXISTS=$($SQLCMD -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C \
+                -Q "USE SIGD_Central; SELECT COUNT(*) FROM dbo.Empresa WHERE Slug = 'techcorp'" \
+                -h -1 -W 2>/dev/null | head -1 | tr -d '[:space:]')
+            
+            if [ "$SEED_EXISTS" = "0" ] || [ -z "$SEED_EXISTS" ]; then
+                echo "[INIT] Faltan datos semilla (Empresa TechCorp no encontrada). Ejecutando seed.sql..."
+                $SQLCMD -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -i /scripts/seed.sql
+                if [ $? -eq 0 ]; then
+                    echo "[INIT] ✅ Datos de demostración cargados exitosamente."
+                else
+                    echo "[INIT] ❌ Error al cargar datos de demostración."
+                fi
+            else
+                echo "[INIT] ✅ Los datos semilla ya están presentes."
+            fi
         fi
         exit 0
     fi

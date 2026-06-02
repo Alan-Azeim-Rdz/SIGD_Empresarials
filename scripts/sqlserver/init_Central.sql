@@ -1332,16 +1332,19 @@ BEGIN
     IF UPDATE(EstadoFirma)
     BEGIN
         INSERT INTO [dbo].[BitacoraTransaccional] (
-            IdUsuario, IdVersion, Accion, Detalle, IdUsuarioCreacion
+            IdUsuario, IdDocumento, IdVersion, Accion, Detalle, DireccionIP, IdUsuarioCreacion
         )
         SELECT 
-            i.IdUsuarioModificacion, 
+            COALESCE(i.IdUsuarioModificacion, i.IdUsuarioAsignado),
+            v.IdDocumento,
             i.IdVersionDocumento,
             'FIRMA_' + UPPER(i.EstadoFirma),
             'El usuario cambió el estado de la firma a: ' + i.EstadoFirma,
-            i.IdUsuarioModificacion
+            i.IpOrigenFirmante,
+            COALESCE(i.IdUsuarioModificacion, i.IdUsuarioAsignado)
         FROM inserted i
         INNER JOIN deleted d ON i.Id = d.Id
+        INNER JOIN [dbo].[Documento_Version] v ON i.IdVersionDocumento = v.Id
         WHERE i.EstadoFirma <> d.EstadoFirma;
     END
 END
@@ -1384,7 +1387,7 @@ CREATE PROCEDURE [dbo].[SP_CrearUsuario]
     @ApellidoP VARCHAR(100),
     @ApellidoM VARCHAR(100) = NULL,
     @Correo VARCHAR(150),
-    @ContrasenaPlana VARCHAR(255),
+    @ContrasenaPlana NVARCHAR(255),
     @IdUsuarioCreacion INT = NULL
 AS
 BEGIN
@@ -1403,7 +1406,7 @@ GO
 -- Procedimiento para Validar el Login de un Usuario
 CREATE PROCEDURE [dbo].[SP_ValidarLogin]
     @Correo VARCHAR(150),
-    @ContrasenaPlana VARCHAR(255)
+    @ContrasenaPlana NVARCHAR(255)
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1583,7 +1586,7 @@ BEGIN
     -- FK de auditoría (no pueden referenciarse a sí mismas aún porque Empresa es nueva)
     ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuCrea] FOREIGN KEY ([IdUsuarioCreacion]) REFERENCES [dbo].[Usuario]([Id]);
     ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuMod]  FOREIGN KEY ([IdUsuarioModificacion]) REFERENCES [dbo].[Usuario]([Id]);
-    ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuEli]  FOREIGN KEY ([IdUsuarioEliminacion]) REFERENCES [dbo].[Usuario]([Id));
+    ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuEli]  FOREIGN KEY ([IdUsuarioEliminacion]) REFERENCES [dbo].[Usuario]([Id]);
 
     -- Insertar Empresa Demo (Id=1) como tenant inicial del Super Admin
     SET IDENTITY_INSERT [dbo].[Empresa] ON;

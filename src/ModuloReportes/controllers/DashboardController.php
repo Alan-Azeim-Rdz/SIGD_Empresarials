@@ -86,10 +86,11 @@ class DashboardController
     {
         try {
             $stmt = $this->db->query("
-                SELECT id_departamento AS departamento, COUNT(*) AS total
-                FROM documento_vigente
-                WHERE estatus = true
-                GROUP BY id_departamento
+                SELECT COALESCE(d.nombre, 'Depto ' || dv.id_departamento) AS departamento, COUNT(dv.id_documento) AS total
+                FROM documento_vigente dv
+                LEFT JOIN departamento d ON dv.id_departamento = d.id_departamento
+                WHERE dv.estatus = true
+                GROUP BY d.nombre, dv.id_departamento
                 ORDER BY total DESC
                 LIMIT 10
             ");
@@ -135,18 +136,59 @@ class DashboardController
         try {
             $stmt = $this->db->query("
                 SELECT
-                    id_documento,
-                    codigo_interno,
-                    titulo,
-                    version_actual,
-                    TO_CHAR(fecha_publicacion, 'DD/MM/YYYY HH24:MI') AS fecha_formateada,
-                    id_departamento
-                FROM documento_vigente
-                WHERE estatus = true
-                ORDER BY fecha_publicacion DESC
+                    dv.id_documento,
+                    dv.codigo_interno,
+                    dv.titulo,
+                    dv.version_actual,
+                    TO_CHAR(dv.fecha_publicacion, 'DD/MM/YYYY HH24:MI') AS fecha_formateada,
+                    dv.id_departamento,
+                    COALESCE(d.nombre, 'Depto ' || dv.id_departamento) AS nombre_departamento
+                FROM documento_vigente dv
+                LEFT JOIN departamento d ON dv.id_departamento = d.id_departamento
+                WHERE dv.estatus = true
+                ORDER BY dv.fecha_publicacion DESC
                 LIMIT 10
             ");
             $rows = $stmt->fetchAll();
+            echo json_encode($rows);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // API: Detalle de cumplimiento por documento (quién leyó y quién no)
+    // GET /index.php?action=api_cumplimiento_detalle&id_doc=X
+    // ──────────────────────────────────────────────────────────
+    public function documentoCumplimientoDetalle(): void
+    {
+        try {
+            $id_doc = (int)($_GET['id_doc'] ?? 0);
+            if (!$id_doc) {
+                http_response_code(400);
+                echo json_encode(['status' => 'error', 'message' => 'id_doc es requerido.']);
+                return;
+            }
+
+            $query = "
+                SELECT 
+                    u.id_usuario,
+                    u.nombre,
+                    u.apellido_p,
+                    u.correo,
+                    TO_CHAR(a.fecha_lectura, 'DD/MM/YYYY HH24:MI') AS fecha_formateada,
+                    a.direccion_ip,
+                    CASE WHEN a.id_acuse IS NOT NULL THEN true ELSE false END AS leido
+                FROM documento_vigente dv
+                JOIN usuario u ON u.id_departamento = dv.id_departamento AND u.id_empresa = dv.id_empresa AND u.estatus = true
+                LEFT JOIN acuse_lectura a ON a.id_documento = dv.id_documento AND a.id_usuario = u.id_usuario AND a.estatus = true
+                WHERE dv.id_documento = :id_doc AND dv.estatus = true
+                ORDER BY leido DESC, u.nombre ASC
+            ";
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':id_doc' => $id_doc]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($rows);
         } catch (Exception $e) {
             http_response_code(500);

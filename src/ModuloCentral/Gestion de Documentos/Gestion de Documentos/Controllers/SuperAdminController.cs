@@ -31,7 +31,7 @@ namespace Gestion_de_Documentos.Controllers
         {
             using (var sha256 = SHA256.Create())
             {
-                var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+                var bytes = sha256.ComputeHash(System.Text.Encoding.Unicode.GetBytes(password));
                 var builder = new System.Text.StringBuilder();
                 foreach (var b in bytes)
                 {
