@@ -303,3 +303,39 @@ ON CONFLICT (id_tipo) DO NOTHING;
 
 -- Actualizar auditoría del usuario (se creó a sí mismo)
 UPDATE usuario SET id_usuario_creacion = 1 WHERE id_usuario = 1 AND id_usuario_creacion IS NULL;
+
+
+-- ==========================================================
+-- 5. SOPORTE MULTI-EMPRESA
+-- Agrega tabla empresa y columna id_empresa a las tablas
+-- principales. Idempotente: usa IF NOT EXISTS / ON CONFLICT.
+-- ==========================================================
+
+CREATE TABLE IF NOT EXISTS empresa (
+    id_empresa   SERIAL       PRIMARY KEY,
+    nombre       VARCHAR(100) NOT NULL,
+    slug         VARCHAR(50)  UNIQUE NOT NULL,
+    rfc          VARCHAR(20)  NULL,
+    estatus      BOOLEAN      DEFAULT TRUE,
+    fecha_creacion TIMESTAMP  DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Empresas base del sistema
+INSERT INTO empresa (nombre, slug, rfc, estatus)
+VALUES
+    ('Empresa Demo',       'demo',         'DEMO123456XX9', TRUE),
+    ('TechCorp Solutions', 'techcorp',     'TCS123456789',  TRUE),
+    ('Grupo Innovar',      'grupoinnovar', 'GIN654321XYZ',  TRUE)
+ON CONFLICT (slug) DO NOTHING;
+
+-- Agregar id_empresa a las tablas que lo requieren (idempotente)
+ALTER TABLE departamento      ADD COLUMN IF NOT EXISTS id_empresa INT REFERENCES empresa(id_empresa);
+ALTER TABLE usuario            ADD COLUMN IF NOT EXISTS id_empresa INT REFERENCES empresa(id_empresa);
+ALTER TABLE tipo_documento     ADD COLUMN IF NOT EXISTS id_empresa INT REFERENCES empresa(id_empresa);
+ALTER TABLE documento_vigente  ADD COLUMN IF NOT EXISTS id_empresa INT REFERENCES empresa(id_empresa);
+
+-- Vincular registros existentes a Empresa Demo (id=1)
+UPDATE departamento     SET id_empresa = 1 WHERE id_empresa IS NULL;
+UPDATE usuario          SET id_empresa = 1 WHERE id_empresa IS NULL;
+UPDATE tipo_documento   SET id_empresa = 1 WHERE id_empresa IS NULL;
+UPDATE documento_vigente SET id_empresa = 1 WHERE id_empresa IS NULL;

@@ -1550,3 +1550,153 @@ PRINT '  SEED DATA COMPLETADO EXITOSAMENTE';
 PRINT '  Usuario: admin@sigd.local';
 PRINT '  Contraseña: Admin@SIGD2026!';
 PRINT '========================================';
+GO
+
+-- ==========================================================================================
+-- SECCIÓN 5: SOPORTE MULTI-EMPRESA
+-- Crea la tabla Empresa y agrega columna IdEmpresa a las tablas principales.
+-- Idempotente: cada bloque verifica si ya existe antes de ejecutarse.
+-- ==========================================================================================
+
+PRINT '--- 5.1 Creando tabla Empresa ---';
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Empresa')
+BEGIN
+    CREATE TABLE [dbo].[Empresa] (
+        [Id]                   INT IDENTITY(1,1) NOT NULL,
+        [Nombre]               VARCHAR(100)  NOT NULL,
+        [Slug]                 VARCHAR(50)   NOT NULL,
+        [RFC]                  VARCHAR(20)   NULL,
+        [CorreoContacto]       VARCHAR(150)  NULL,
+        [FechaRegistro]        DATETIME      NOT NULL DEFAULT(GETDATE()),
+        [Estatus]              BIT           NOT NULL DEFAULT(1),
+        [CamposPersonalizados] NVARCHAR(MAX) NULL, -- JSON: definición de campos personalizados por empresa
+        [IdUsuarioCreacion]    INT           NULL,
+        [FechaCreacion]        DATETIME      NULL,
+        [IdUsuarioModificacion] INT          NULL,
+        [FechaModificacion]    DATETIME      NULL,
+        [IdUsuarioEliminacion] INT           NULL,
+        [FechaEliminacion]     DATETIME      NULL,
+        PRIMARY KEY CLUSTERED ([Id] ASC),
+        CONSTRAINT [UQ_Empresa_Slug] UNIQUE NONCLUSTERED ([Slug] ASC)
+    );
+
+    -- FK de auditoría (no pueden referenciarse a sí mismas aún porque Empresa es nueva)
+    ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuCrea] FOREIGN KEY ([IdUsuarioCreacion]) REFERENCES [dbo].[Usuario]([Id]);
+    ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuMod]  FOREIGN KEY ([IdUsuarioModificacion]) REFERENCES [dbo].[Usuario]([Id]);
+    ALTER TABLE [dbo].[Empresa] ADD CONSTRAINT [FK_Empresa_UsuEli]  FOREIGN KEY ([IdUsuarioEliminacion]) REFERENCES [dbo].[Usuario]([Id));
+
+    -- Insertar Empresa Demo (Id=1) como tenant inicial del Super Admin
+    SET IDENTITY_INSERT [dbo].[Empresa] ON;
+    INSERT INTO [dbo].[Empresa] (Id, Nombre, Slug, RFC, CorreoContacto, FechaCreacion, IdUsuarioCreacion, Estatus)
+    VALUES (1, N'Empresa Demo', N'demo', N'DEMO123456XX9', N'contacto@demo.local', GETDATE(), 1, 1);
+    SET IDENTITY_INSERT [dbo].[Empresa] OFF;
+
+    PRINT '  ✓ Tabla Empresa creada y Empresa Demo (Id=1) insertada.';
+END
+ELSE
+    PRINT '  → Tabla Empresa ya existe, se omite.';
+GO
+
+PRINT '--- 5.2 Agregando IdEmpresa a Departamento ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Departamento') AND name = 'IdEmpresa')
+BEGIN
+    ALTER TABLE [dbo].[Departamento] ADD [IdEmpresa] INT NULL;
+    ALTER TABLE [dbo].[Departamento] ADD CONSTRAINT [FK_Departamento_Empresa] FOREIGN KEY ([IdEmpresa]) REFERENCES [dbo].[Empresa] ([Id]);
+    EXEC('UPDATE [dbo].[Departamento] SET [IdEmpresa] = 1 WHERE [Id] <> 1;');
+    PRINT '  ✓ Columna IdEmpresa agregada a Departamento.';
+END ELSE PRINT '  → IdEmpresa ya existe en Departamento.';
+GO
+
+PRINT '--- 5.3 Agregando IdEmpresa a TipoDocumento ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.TipoDocumento') AND name = 'IdEmpresa')
+BEGIN
+    ALTER TABLE [dbo].[TipoDocumento] ADD [IdEmpresa] INT NULL;
+    ALTER TABLE [dbo].[TipoDocumento] ADD CONSTRAINT [FK_TipoDocumento_Empresa] FOREIGN KEY ([IdEmpresa]) REFERENCES [dbo].[Empresa] ([Id]);
+    EXEC('UPDATE [dbo].[TipoDocumento] SET [IdEmpresa] = 1;');
+    PRINT '  ✓ Columna IdEmpresa agregada a TipoDocumento.';
+END ELSE PRINT '  → IdEmpresa ya existe en TipoDocumento.';
+GO
+
+PRINT '--- 5.4 Agregando IdEmpresa y CamposPersonalizados a Documento ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Documento') AND name = 'IdEmpresa')
+BEGIN
+    ALTER TABLE [dbo].[Documento] ADD [IdEmpresa]                    INT           NULL;
+    ALTER TABLE [dbo].[Documento] ADD [CamposPersonalizadosValores]  NVARCHAR(MAX) NULL;
+    ALTER TABLE [dbo].[Documento] ADD CONSTRAINT [FK_Documento_Empresa] FOREIGN KEY ([IdEmpresa]) REFERENCES [dbo].[Empresa] ([Id]);
+    EXEC('UPDATE [dbo].[Documento] SET [IdEmpresa] = 1;');
+    PRINT '  ✓ Columnas IdEmpresa y CamposPersonalizadosValores agregadas a Documento.';
+END ELSE PRINT '  → IdEmpresa ya existe en Documento.';
+GO
+
+PRINT '--- 5.5 Agregando IdEmpresa a Usuario ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Usuario') AND name = 'IdEmpresa')
+BEGIN
+    ALTER TABLE [dbo].[Usuario] ADD [IdEmpresa] INT NULL;
+    ALTER TABLE [dbo].[Usuario] ADD CONSTRAINT [FK_Usuario_Empresa] FOREIGN KEY ([IdEmpresa]) REFERENCES [dbo].[Empresa] ([Id]);
+    EXEC('UPDATE [dbo].[Usuario] SET [IdEmpresa] = 1 WHERE [Id] <> 1;');
+    PRINT '  ✓ Columna IdEmpresa agregada a Usuario.';
+END ELSE PRINT '  → IdEmpresa ya existe en Usuario.';
+GO
+
+
+-- ==========================================================================================
+-- SECCIÓN 6: CAMPOS ADICIONALES (VERSIONES MENORES, IP DE FIRMANTES)
+-- Idempotente: solo agrega si no existe.
+-- ==========================================================================================
+
+PRINT '--- 6.1 VersionMinor en Documento_Version ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Documento_Version]') AND name = 'VersionMinor')
+BEGIN
+    ALTER TABLE [dbo].[Documento_Version] ADD [VersionMinor] INT NOT NULL DEFAULT 0;
+    PRINT '  ✓ Columna VersionMinor añadida a Documento_Version.';
+END ELSE PRINT '  → VersionMinor ya existe.';
+GO
+
+PRINT '--- 6.2 IP de Firmantes en Flujo_Aprobacion ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Flujo_Aprobacion]') AND name = 'IpOrigenRemitente')
+BEGIN
+    ALTER TABLE [dbo].[Flujo_Aprobacion] ADD [IpOrigenRemitente] NVARCHAR(50) NULL;
+    PRINT '  ✓ Columna IpOrigenRemitente añadida a Flujo_Aprobacion.';
+END ELSE PRINT '  → IpOrigenRemitente ya existe.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[Flujo_Aprobacion]') AND name = 'IpOrigenFirmante')
+BEGIN
+    ALTER TABLE [dbo].[Flujo_Aprobacion] ADD [IpOrigenFirmante] NVARCHAR(50) NULL;
+    PRINT '  ✓ Columna IpOrigenFirmante añadida a Flujo_Aprobacion.';
+END ELSE PRINT '  → IpOrigenFirmante ya existe.';
+GO
+
+PRINT '--- 6.3 FechaCreacion en Bitácoras ---';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[BitacoraAcceso]') AND name = 'FechaCreacion')
+BEGIN
+    ALTER TABLE [dbo].[BitacoraAcceso]         ADD [FechaCreacion] DATETIME NULL;
+    ALTER TABLE [dbo].[BitacoraControlDocumento] ADD [FechaCreacion] DATETIME NULL;
+    ALTER TABLE [dbo].[BitacoraTransaccional]  ADD [FechaCreacion] DATETIME NULL;
+    PRINT '  ✓ Columna FechaCreacion añadida a tablas de Bitácora.';
+END ELSE PRINT '  → FechaCreacion ya existe en Bitácoras.';
+GO
+
+
+-- ==========================================================================================
+-- SECCIÓN 7: TRIGGER DE AUTO-FECHA PARA EMPRESA
+-- ==========================================================================================
+
+IF NOT EXISTS (SELECT * FROM sys.triggers WHERE name = 'TRG_AutoFechaMod_Empresa')
+BEGIN
+    EXEC('
+    CREATE TRIGGER [dbo].[TRG_AutoFechaMod_Empresa] ON [dbo].[Empresa] AFTER UPDATE AS
+    BEGIN
+        SET NOCOUNT ON;
+        IF NOT UPDATE(FechaModificacion)
+            UPDATE t SET t.FechaModificacion = GETDATE()
+            FROM [dbo].[Empresa] t INNER JOIN inserted i ON t.Id = i.Id;
+    END;
+    ');
+    PRINT '  ✓ Trigger TRG_AutoFechaMod_Empresa creado.';
+END ELSE PRINT '  → Trigger TRG_AutoFechaMod_Empresa ya existe.';
+GO
+
+PRINT '========================================';
+PRINT '  INICIALIZACIÓN COMPLETA';
+PRINT '========================================';

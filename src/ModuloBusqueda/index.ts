@@ -14,11 +14,11 @@ import pino from 'pino';
 // Prod (NODE_ENV=production): JSON puro en stdout, 1 línea por entrada.
 // Dev: pino-pretty con colores (instalado en devDependencies).
 const IS_PRODUCTION = (process.env['NODE_ENV'] ?? 'production') === 'production';
-const loggerOptions: any = {
+const loggerOptions: pino.LoggerOptions = {
   level: process.env['LOG_LEVEL'] ?? 'info'
 };
 if (!IS_PRODUCTION) {
-  loggerOptions.transport = { target: 'pino-pretty', options: { colorize: true } };
+  (loggerOptions as Record<string, unknown>).transport = { target: 'pino-pretty', options: { colorize: true } };
 }
 export const logger = pino(loggerOptions);
 
@@ -27,11 +27,13 @@ export const app = express();
 
 app.use(express.json());
 
-// Middleware para habilitar CORS (Cross-Origin Resource Sharing)
+// Middleware CORS: en producción solo permite el origen del módulo central.
+// Configurable via env var CORS_ORIGIN (default: red Docker interna).
+const CORS_ORIGIN = process.env['CORS_ORIGIN'] ?? 'http://modulo_central:5000';
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,Authorization');
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type,Authorization');
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
@@ -324,7 +326,9 @@ export function escapeRegex(text: string): string {
  *       - Documentos
  *     summary: Buscar documentos por término
  *     description: >
- *       Busca documentos activos por término en título, tags y contenido extraído.
+ *       Busca documentos activos e indexados por término en título, tags y contenido extraído.
+ *       Solo el módulo central indexa documentos (cuando pasan a estado Aprobado),
+ *       por lo que todos los resultados son documentos vigentes.
  *       La búsqueda es insensible a mayúsculas y está protegida contra ataques
  *       ReDoS mediante escape de metacaracteres regex.
  *     parameters:
@@ -336,6 +340,13 @@ export function escapeRegex(text: string): string {
  *           maxLength: 100
  *         description: Término de búsqueda (máximo 100 caracteres)
  *         example: calidad
+ *       - in: query
+ *         name: id_empresa
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la empresa (tenant). Filtra resultados al tenant del solicitante.
+ *         example: 1
  *     responses:
  *       '200':
  *         description: Lista de documentos que coinciden con el término
@@ -355,14 +366,14 @@ export function escapeRegex(text: string): string {
  *                   items:
  *                     $ref: '#/components/schemas/Metadato'
  *       '400':
- *         description: Parámetro `q` ausente o mayor a 100 caracteres
+ *         description: Parámetros ausentes o inválidos
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/RespuestaError'
  *             example:
  *               success: false
- *               mensaje: Debes enviar un término de búsqueda. Ejemplo /buscar?q=calidad
+ *               mensaje: Debes enviar un término de búsqueda. Ejemplo /buscar?q=calidad&id_empresa=1
  *       '500':
  *         description: Error interno del servidor
  *         content:
@@ -381,7 +392,7 @@ app.get('/buscar', async (req: Request, res: Response) => {
     }
 
     if (!query) {
-      res.status(400).json({ success: false, mensaje: 'Debes enviar un término de búsqueda. Ejemplo: /buscar?q=calidad' });
+      res.status(400).json({ success: false, mensaje: 'Debes enviar un término de búsqueda. Ejemplo: /buscar?q=calidad&id_empresa=1' });
       return;
     }
 
@@ -390,12 +401,13 @@ app.get('/buscar', async (req: Request, res: Response) => {
       return;
     }
 
+    // Nota: no se filtra por versión porque el módulo central solo indexa documentos
+    // aprobados (estado Vigente). Todos los registros en MongoDB ya son documentos vigentes.
     const safeQuery  = escapeRegex(query);
     const regex      = { $regex: safeQuery, $options: 'i' };
     const resultados = await Metadato.find({
-      estatus: true,
+      estatus:    true,
       id_empresa,
-      version: { $not: /\.([1-9]\d*)$/ },
       $or: [
         { titulo:             regex },
         { tags:               regex },
@@ -419,7 +431,7 @@ app.get('/buscar', async (req: Request, res: Response) => {
  *       - Documentos
  *     summary: Obtener un documento por ID o código interno
  *     description: >
- *       Devuelve los metadatos completos de un documento activo.
+ *       Devuelve los metadatos completos de un documento activo dentro del tenant.
  *       Si el parámetro `id` es numérico se busca por `id_documento_sql`;
  *       si es alfanumérico (ej. CAL-MAN-001) se busca por `codigo_interno`.
  *     parameters:
@@ -430,6 +442,13 @@ app.get('/buscar', async (req: Request, res: Response) => {
  *           type: string
  *         description: ID numérico de SQL Server o código interno del documento
  *         example: CAL-MAN-001
+ *       - in: query
+ *         name: id_empresa
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la empresa (tenant). Evita acceso cross-tenant.
+ *         example: 1
  *     responses:
  *       '200':
  *         description: Documento encontrado
@@ -443,8 +462,14 @@ app.get('/buscar', async (req: Request, res: Response) => {
  *                   example: true
  *                 data:
  *                   $ref: '#/components/schemas/Metadato'
+ *       '400':
+ *         description: Falta el parámetro id_empresa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RespuestaError'
  *       '404':
- *         description: No existe ningún documento activo con ese ID o código
+ *         description: No existe ningún documento activo con ese ID o código en el tenant
  *         content:
  *           application/json:
  *             schema:
@@ -459,6 +484,8 @@ app.get('/buscar', async (req: Request, res: Response) => {
  *             schema:
  *               $ref: '#/components/schemas/RespuestaError'
  */
+
+
 app.get('/documento/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
@@ -498,7 +525,8 @@ app.get('/documento/:id', async (req: Request, res: Response) => {
  *       - Documentos
  *     summary: Desindexar (eliminar) un documento
  *     description: >
- *       Realiza el borrado lógico (estatus = false) de un documento en el índice de búsqueda de MongoDB.
+ *       Realiza el borrado lógico (estatus = false) de un documento en MongoDB.
+ *       Requiere id_empresa para garantizar aislamiento entre tenants.
  *     parameters:
  *       - in: path
  *         name: id
@@ -506,22 +534,38 @@ app.get('/documento/:id', async (req: Request, res: Response) => {
  *         schema:
  *           type: string
  *         description: ID numérico de SQL Server o código interno del documento
+ *       - in: query
+ *         name: id_empresa
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la empresa (tenant). Previene borrado cross-tenant.
+ *         example: 1
  *     responses:
  *       '200':
  *         description: Documento desindexado correctamente
+ *       '400':
+ *         description: Falta el parámetro id_empresa
  *       '404':
- *         description: No se encontró ningún documento con ese ID o código
+ *         description: No se encontró ningún documento con ese ID o código en el tenant
  *       '500':
  *         description: Error interno del servidor
  */
 app.delete('/documento/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params['id'] as string;
-    const esNumerico = /^\d+$/.test(id);
+    const id_empresa = parseInt(req.query['id_empresa'] as string, 10);
 
+    // Requerido para evitar borrado de documentos de otro tenant (aislamiento multi-empresa)
+    if (!id_empresa) {
+      res.status(400).json({ success: false, mensaje: 'Debes enviar el parámetro id_empresa.' });
+      return;
+    }
+
+    const esNumerico = /^\d+$/.test(id);
     const filtro = esNumerico
-      ? { id_documento_sql: parseInt(id, 10) }
-      : { codigo_interno: id };
+      ? { id_documento_sql: parseInt(id, 10), id_empresa }
+      : { codigo_interno: id,                 id_empresa };
 
     const documento = await Metadato.findOne(filtro as any);
 
@@ -530,7 +574,7 @@ app.delete('/documento/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    documento.estatus = false;
+    documento.estatus          = false;
     documento.fecha_eliminacion = new Date();
     await documento.save();
 

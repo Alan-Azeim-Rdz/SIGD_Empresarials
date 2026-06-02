@@ -83,12 +83,13 @@ describe('GET /buscar', () => {
     expect(filtro['id_empresa']).toBe(1);
   });
 
-  it('el filtro de búsqueda excluye versiones de borrador/inestables', async () => {
+  it('el filtro de b\u00fasqueda NO filtra por versi\u00f3n (todos los docs indexados son vigentes)', async () => {
     await request(app).get('/buscar').query({ q: 'test', id_empresa: 1 });
 
     const filtro = findSpy.mock.calls[0]?.[0] as Record<string, any>;
-    expect(filtro).toHaveProperty('version');
-    expect(filtro.version).toEqual({ $not: /\.([1-9]\d*)$/ });
+    // El m\u00f3dulo central solo indexa documentos aprobados, por lo que
+    // no es necesario filtrar por versi\u00f3n dentro de MongoDB.
+    expect(filtro).not.toHaveProperty('version');
   });
 
   it('si Metadato.find lanza un error → 500', async () => {

@@ -111,52 +111,9 @@ db.DocumentosMetadata.createIndex(
 );
 print('  ✓ Índice de estatus creado.');
 
-// ----------------------------------------------------------
-// 3. Colección Espejo de Usuarios (Para Autenticación)
-// ----------------------------------------------------------
-db.createCollection('Usuarios', {
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["correo", "contrasena", "estatus"],
-            properties: {
-                correo: { bsonType: "string" },
-                contrasena: { bsonType: "string" },
-                estatus: { bsonType: "bool" }
-            }
-        }
-    }
-});
-db.Usuarios.createIndex({ correo: 1 }, { unique: true, name: "IDX_Correo_Unique" });
-print('  ✓ Colección "Usuarios" creada.');
-
-// Insertar Seed Data de Admin con la contraseña YA HASHEADA (simulando lo que hace SQL Server/Postgres)
-// El Hash SHA-256 de 'Admin@SIGD2026!' es:
-db.Usuarios.insert({
-    correo: 'admin@sigd.local',
-    contrasena: '9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08', // Placeholder del Hash real
-    estatus: true
-});
-print('  ✓ Usuario Admin insertado en MongoDB.');
-
-// ----------------------------------------------------------
-// 4. Función de validación de login (JavaScript local)
-// db.system.js fue eliminada en MongoDB 4.4+; se declara aquí
-// como función JS estándar para usar durante la inicialización.
-// En producción, la lógica de login y hashing vive en Node.js.
-// ----------------------------------------------------------
-function fn_validar_login(correo, hashContrasena) {
-    // Recibe el hash SHA-256 ya calculado por la capa de aplicación (Node.js).
-    // MongoDB no expone funciones criptográficas nativas en el shell.
-    return db.Usuarios.findOne({
-        correo: correo,
-        contrasena: hashContrasena,
-        estatus: true
-    });
-}
-print('  ✓ Función fn_validar_login declarada como JS local (db.system.js eliminado en MongoDB 4.4+).');
-
 print('========================================');
 print('  MongoDB inicializado exitosamente');
 print('  Base de datos: sigd_busqueda');
+print('  Colecciones  : DocumentosMetadata');
 print('========================================');
+
