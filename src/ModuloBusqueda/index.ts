@@ -47,9 +47,9 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     logger.info({
-      method:      req.method,
-      url:         req.url,
-      status:      res.statusCode,
+      method: req.method,
+      url: req.url,
+      status: res.statusCode,
       duration_ms: Date.now() - start
     }, 'http_request');
   });
@@ -59,40 +59,40 @@ app.use((req, res, next) => {
 // ── 3. MODELO DE DATOS ────────────────────────────────
 // Esquema sincronizado con scripts/mongo/init_busqueda.js
 interface IMetadato extends Document {
-  id_documento_sql:         number;
-  id_empresa:               number;
-  codigo_interno:           string;
-  titulo:                   string;
-  tags:                     string[];
-  version?:                 string;
-  ip_subida?:               string;
-  contenido_extraido?:      string;
-  id_usuario_creacion:      number;
-  estatus:                  boolean;
-  fecha_indexacion:         Date;
-  fecha_modificacion?:      Date | null;
+  id_documento_sql: number;
+  id_empresa: number;
+  codigo_interno: string;
+  titulo: string;
+  tags: string[];
+  version?: string;
+  ip_subida?: string;
+  contenido_extraido?: string;
+  id_usuario_creacion: number;
+  estatus: boolean;
+  fecha_indexacion: Date;
+  fecha_modificacion?: Date | null;
   id_usuario_modificacion?: number | null;
-  fecha_eliminacion?:       Date | null;
-  id_usuario_eliminacion?:  number | null;
+  fecha_eliminacion?: Date | null;
+  id_usuario_eliminacion?: number | null;
 }
 
 const MetadatoSchema = new Schema<IMetadato>(
   {
-    id_documento_sql:        { type: Number, required: true, unique: true },
-    id_empresa:              { type: Number, required: true },
-    codigo_interno:          { type: String, required: true, unique: true },
-    titulo:                  { type: String, required: true },
-    tags:                    { type: [String], default: [] },
-    version:                 { type: String },
-    ip_subida:               { type: String, default: '127.0.0.1' },
-    contenido_extraido:      { type: String },
-    id_usuario_creacion:     { type: Number, required: true },
-    estatus:                 { type: Boolean, required: true, default: true },
-    fecha_indexacion:        { type: Date, default: Date.now },
-    fecha_modificacion:      { type: Date, default: null },
+    id_documento_sql: { type: Number, required: true, unique: true },
+    id_empresa: { type: Number, required: true },
+    codigo_interno: { type: String, required: true, unique: true },
+    titulo: { type: String, required: true },
+    tags: { type: [String], default: [] },
+    version: { type: String },
+    ip_subida: { type: String, default: '127.0.0.1' },
+    contenido_extraido: { type: String },
+    id_usuario_creacion: { type: Number, required: true },
+    estatus: { type: Boolean, required: true, default: true },
+    fecha_indexacion: { type: Date, default: Date.now },
+    fecha_modificacion: { type: Date, default: null },
     id_usuario_modificacion: { type: Number, default: null },
-    fecha_eliminacion:       { type: Date, default: null },
-    id_usuario_eliminacion:  { type: Number, default: null }
+    fecha_eliminacion: { type: Date, default: null },
+    id_usuario_eliminacion: { type: Number, default: null }
   },
   { collection: 'DocumentosMetadata' }
 );
@@ -122,7 +122,7 @@ const swaggerSpec = swaggerJsdoc({
         'sobre sus metadatos almacenados en MongoDB.'
     },
     servers: [
-      { url: 'http://localhost:3000',       description: 'Desarrollo local' },
+      { url: 'http://localhost:3000', description: 'Desarrollo local' },
       { url: 'http://modulo_busqueda:3000', description: 'Red Docker interna' }
     ],
     tags: [
@@ -134,15 +134,15 @@ const swaggerSpec = swaggerJsdoc({
           type: 'object',
           required: ['id_documento_sql', 'id_empresa', 'codigo_interno', 'titulo', 'id_usuario_creacion'],
           properties: {
-            id_documento_sql:    { type: 'integer', example: 11,                              description: 'ID del documento en SQL Server' },
-            id_empresa:          { type: 'integer', example: 1,                               description: 'ID de la empresa (tenant)' },
-            codigo_interno:      { type: 'string',  example: 'CAL-MAN-001',                  description: 'Código interno único del documento' },
-            titulo:              { type: 'string',  example: 'Manual de Calidad ISO 9001:2015' },
-            tags:                { type: 'array', items: { type: 'string' }, example: ['calidad', 'ISO 9001', 'manual', 'SGC'] },
-            version:             { type: 'string',  example: '1.0',                           description: 'Versión del documento (default "0.1" si no se envía)' },
-            ip_subida:           { type: 'string',  example: '127.0.0.1',                     description: 'Dirección IP desde la que se subió el documento' },
-            contenido_extraido:  { type: 'string',  example: 'Documento rector del Sistema de Gestión de Calidad de la empresa.' },
-            id_usuario_creacion: { type: 'integer', example: 1,                              description: 'ID del usuario que aprobó el documento' }
+            id_documento_sql: { type: 'integer', example: 11, description: 'ID del documento en SQL Server' },
+            id_empresa: { type: 'integer', example: 1, description: 'ID de la empresa (tenant)' },
+            codigo_interno: { type: 'string', example: 'CAL-MAN-001', description: 'Código interno único del documento' },
+            titulo: { type: 'string', example: 'Manual de Calidad ISO 9001:2015' },
+            tags: { type: 'array', items: { type: 'string' }, example: ['calidad', 'ISO 9001', 'manual', 'SGC'] },
+            version: { type: 'string', example: '1.0', description: 'Versión del documento (default "0.1" si no se envía)' },
+            ip_subida: { type: 'string', example: '127.0.0.1', description: 'Dirección IP desde la que se subió el documento' },
+            contenido_extraido: { type: 'string', example: 'Documento rector del Sistema de Gestión de Calidad de la empresa.' },
+            id_usuario_creacion: { type: 'integer', example: 1, description: 'ID del usuario que aprobó el documento' }
           }
         },
         Metadato: {
@@ -151,9 +151,9 @@ const swaggerSpec = swaggerJsdoc({
             {
               type: 'object',
               properties: {
-                _id:              { type: 'string',  example: '6650a1b2c3d4e5f6a7b8c9d0', readOnly: true },
-                estatus:          { type: 'boolean', example: true,                        description: 'Borrado lógico: true=activo' },
-                fecha_indexacion: { type: 'string',  format: 'date-time',                 readOnly: true }
+                _id: { type: 'string', example: '6650a1b2c3d4e5f6a7b8c9d0', readOnly: true },
+                estatus: { type: 'boolean', example: true, description: 'Borrado lógico: true=activo' },
+                fecha_indexacion: { type: 'string', format: 'date-time', readOnly: true }
               }
             }
           ]
@@ -162,8 +162,8 @@ const swaggerSpec = swaggerJsdoc({
           type: 'object',
           properties: {
             success: { type: 'boolean', example: false },
-            mensaje: { type: 'string',  example: 'Descripción del error' },
-            detalle: { type: 'string',  example: 'Mensaje técnico opcional' }
+            mensaje: { type: 'string', example: 'Descripción del error' },
+            detalle: { type: 'string', example: 'Mensaje técnico opcional' }
           }
         }
       }
@@ -172,8 +172,11 @@ const swaggerSpec = swaggerJsdoc({
   apis: [__filename]
 });
 
-app.use('/docs',      swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
+app.get('/', (_req, res) => {
+  res.redirect('/docs');
+});
 
 // ── 5. ENDPOINTS ──────────────────────────────────────
 
@@ -283,13 +286,13 @@ app.post('/indexar', async (req: Request, res: Response) => {
       id_empresa,
       codigo_interno,
       titulo,
-      tags:                tags || [],
-      version:             version ?? '0.1',
-      contenido_extraido:  contenido_extraido ?? undefined,
+      tags: tags || [],
+      version: version ?? '0.1',
+      contenido_extraido: contenido_extraido ?? undefined,
       id_usuario_creacion,
-      ip_subida:           ip_subida ?? '127.0.0.1',
-      estatus:             true,
-      fecha_indexacion:    new Date()
+      ip_subida: ip_subida ?? '127.0.0.1',
+      estatus: true,
+      fecha_indexacion: new Date()
     });
 
     await nuevoMetadato.save();
@@ -403,14 +406,14 @@ app.get('/buscar', async (req: Request, res: Response) => {
 
     // Nota: no se filtra por versión porque el módulo central solo indexa documentos
     // aprobados (estado Vigente). Todos los registros en MongoDB ya son documentos vigentes.
-    const safeQuery  = escapeRegex(query);
-    const regex      = { $regex: safeQuery, $options: 'i' };
+    const safeQuery = escapeRegex(query);
+    const regex = { $regex: safeQuery, $options: 'i' };
     const resultados = await Metadato.find({
-      estatus:    true,
+      estatus: true,
       id_empresa,
       $or: [
-        { titulo:             regex },
-        { tags:               regex },
+        { titulo: regex },
+        { tags: regex },
         { contenido_extraido: regex }
       ]
     });
@@ -500,7 +503,7 @@ app.get('/documento/:id', async (req: Request, res: Response) => {
 
     const filtro = esNumerico
       ? { id_documento_sql: parseInt(id, 10), id_empresa, estatus: true }
-      : { codigo_interno: id,                 id_empresa, estatus: true };
+      : { codigo_interno: id, id_empresa, estatus: true };
 
     const documento = await Metadato.findOne(filtro as any);
 
@@ -565,7 +568,7 @@ app.delete('/documento/:id', async (req: Request, res: Response) => {
     const esNumerico = /^\d+$/.test(id);
     const filtro = esNumerico
       ? { id_documento_sql: parseInt(id, 10), id_empresa }
-      : { codigo_interno: id,                 id_empresa };
+      : { codigo_interno: id, id_empresa };
 
     const documento = await Metadato.findOne(filtro as any);
 
@@ -574,7 +577,7 @@ app.delete('/documento/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    documento.estatus          = false;
+    documento.estatus = false;
     documento.fecha_eliminacion = new Date();
     await documento.save();
 
