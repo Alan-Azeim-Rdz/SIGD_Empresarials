@@ -104,6 +104,26 @@ try {
             $controller->sincronizarBatch();
             break;
 
+        case 'sincronizar_usuario':
+            // Sincroniza un único usuario (espejo)
+            $controller->sincronizarUsuario();
+            break;
+
+        case 'sincronizar_departamento':
+            // Sincroniza un único departamento
+            $controller->sincronizarDepartamento();
+            break;
+
+        case 'sincronizar_tipo':
+            // Sincroniza un único tipo de documento
+            $controller->sincronizarTipoDocumento();
+            break;
+
+        case 'eliminar_documento':
+            // Desactiva un documento en PostgreSQL
+            $controller->eliminarDocumento();
+            break;
+
         case 'ping':
             // Health-check: el Módulo Central lo usa para verificar
             // que el servicio de Reportes está disponible antes de sincronizar
@@ -119,7 +139,7 @@ try {
             http_response_code(400);
             echo json_encode([
                 'status'  => 'error',
-                'message' => "Acción desconocida: '{$action}'. Acciones válidas: sincronizar, sincronizar_batch, ping."
+                'message' => "Acción desconocida: '{$action}'. Acciones válidas: sincronizar, sincronizar_batch, sincronizar_usuario, sincronizar_departamento, sincronizar_tipo, ping."
             ]);
     }
 } catch (Throwable $e) {

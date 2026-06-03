@@ -56,7 +56,7 @@
                         <div class="row">
                             @using System.Text.Json
                             @{
-                                var jsonStr = ViewBag.CamposPersonalizados as string;
+                                var jsonStr = ViewBag.CamposPersonalizados as string ?? "[]";
                                 try
                                 {
                                     using var docJson = JsonDocument.Parse(jsonStr);

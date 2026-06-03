@@ -56,6 +56,9 @@ builder.Services.AddHttpClient<BusquedaIntegrationService>(client =>
 // ── Servicio MongoDB GridFS para Archivos Físicos ─────────────
 builder.Services.AddSingleton<IMongoGridFsService, MongoGridFsService>();
 
+// ── Servicio de Email SMTP ────────────────────────────────────
+builder.Services.AddTransient<IEmailService, SmtpEmailService>();
+
 var app = builder.Build();
 
 // ── Pipeline HTTP ─────────────────────────────────────────────

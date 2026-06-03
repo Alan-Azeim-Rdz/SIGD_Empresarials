@@ -1,0 +1,54 @@
+name: sigd-central
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04
+    container_name: sigd_sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${SQL_SA_PASSWORD}
+      - MSSQL_PID=Express
+    ports:
+      - "1434:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+      - ./scripts/sqlserver:/scripts
+    entrypoint: /bin/bash /scripts/entrypoint.sh
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - sigd_network
+    restart: unless-stopped
+
+  modulo_central:
+    build:
+      context: "./src/ModuloCentral/Gestion de Documentos"
+      dockerfile: "Gestion de Documentos/Dockerfile"
+    container_name: app_central_dotnet
+    ports:
+      - "5000:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=${SQL_DATABASE};User Id=${APP_DB_USER};Password=${APP_DB_PASSWORD};TrustServerCertificate=True;
+      - ReportesModule__BaseUrl=http://modulo_reportes
+      - BusquedaModule__BaseUrl=http://modulo_busqueda:3000
+      - ReportesModule__SyncApiKey=${SYNC_API_KEY}
+      - ReportesModule__TimeoutSeconds=10
+      - MONGO_URI=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/sigd_busqueda?authSource=admin
+      - MONGO_DB_NAME=sigd_busqueda
+    networks:
+      - sigd_network
+    restart: unless-stopped
+
+volumes:
+  sql_data:
+
+networks:
+  sigd_network:
+    external: true

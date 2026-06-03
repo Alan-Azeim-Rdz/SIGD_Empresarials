@@ -104,6 +104,8 @@ namespace Gestion_de_Documentos.Controllers
                 _context.Departamentos.Add(departamento);
                 await _context.SaveChangesAsync();
 
+                await _reportesService.SincronizarDepartamentoAsync(departamento.Id);
+
                 return RedirectToAction("Departamentos");
             }
             return View(departamento);
@@ -142,6 +144,9 @@ namespace Gestion_de_Documentos.Controllers
                 dptoActual.IdUsuarioModificacion = GetCurrentUserId();
 
                 await _context.SaveChangesAsync();
+
+                await _reportesService.SincronizarDepartamentoAsync(departamento.Id);
+
                 return RedirectToAction("Departamentos");
             }
             return View(departamento);
@@ -158,6 +163,8 @@ namespace Gestion_de_Documentos.Controllers
                 departamento.FechaEliminacion = DateTime.Now;
                 departamento.IdUsuarioEliminacion = GetCurrentUserId();
                 await _context.SaveChangesAsync();
+
+                await _reportesService.SincronizarDepartamentoAsync(id);
             }
             return RedirectToAction("Departamentos");
         }
@@ -405,6 +412,8 @@ namespace Gestion_de_Documentos.Controllers
                 _context.TipoDocumentos.Add(tipoDocumento);
                 await _context.SaveChangesAsync();
 
+                await _reportesService.SincronizarTipoDocumentoAsync(tipoDocumento.Id);
+
                 return RedirectToAction("TiposDocumento");
             }
             return View(tipoDocumento);
@@ -444,6 +453,9 @@ namespace Gestion_de_Documentos.Controllers
                 tipoActual.IdUsuarioModificacion = GetCurrentUserId();
 
                 await _context.SaveChangesAsync();
+
+                await _reportesService.SincronizarTipoDocumentoAsync(tipoDocumento.Id);
+
                 return RedirectToAction("TiposDocumento");
             }
             return View(tipoDocumento);
@@ -460,6 +472,8 @@ namespace Gestion_de_Documentos.Controllers
                 tipoDocumento.FechaEliminacion = DateTime.Now;
                 tipoDocumento.IdUsuarioEliminacion = GetCurrentUserId();
                 await _context.SaveChangesAsync();
+
+                await _reportesService.SincronizarTipoDocumentoAsync(id);
             }
             return RedirectToAction("TiposDocumento");
         }

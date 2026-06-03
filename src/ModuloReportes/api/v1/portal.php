@@ -64,7 +64,7 @@ if ($action === 'acuse' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'Desconocido';
 
         $stmt = $db->prepare("
-            INSERT INTO acuse_lectura (id_documento, id_usuario, fecha_lectura, direccion_ip, user_agent, id_usuario_creacion, estatus)
+            INSERT INTO acuse_lectura (id_documento, id_usuario, fecha_lectura, direccion_ip, dispositivo_info, id_usuario_creacion, estatus)
             VALUES (:id_doc, :id_usr, NOW(), :ip, :ua, :id_usr, true)
         ");
         $stmt->execute([

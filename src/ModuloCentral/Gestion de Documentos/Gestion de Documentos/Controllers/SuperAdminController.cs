@@ -16,10 +16,14 @@ namespace Gestion_de_Documentos.Controllers
     public class SuperAdminController : Controller
     {
         private readonly DirContext _context;
+        private readonly Gestion_de_Documentos.Services.ReportesIntegrationService _reportesService;
 
-        public SuperAdminController(DirContext context)
+        public SuperAdminController(
+            DirContext context,
+            Gestion_de_Documentos.Services.ReportesIntegrationService reportesService)
         {
             _context = context;
+            _reportesService = reportesService;
         }
 
         private int GetCurrentUserId()
@@ -85,6 +89,12 @@ namespace Gestion_de_Documentos.Controllers
 
             _context.Update(empresa);
             await _context.SaveChangesAsync();
+
+            // Sincronizar espejo de usuarios afectados en módulo de reportes
+            foreach (var u in usuarios)
+            {
+                await _reportesService.SincronizarUsuarioAsync(u.Id);
+            }
 
             TempData["SuccessMessage"] = $"Estatus de la empresa '{empresa.Nombre}' actualizado con éxito.";
             return RedirectToAction(nameof(Index));
@@ -203,6 +213,10 @@ namespace Gestion_de_Documentos.Controllers
                         await _context.SaveChangesAsync();
 
                         await transaction.CommitAsync();
+
+                        // Sincronizar departamento y usuario espejo en módulo de reportes
+                        await _reportesService.SincronizarDepartamentoAsync(deptoAdm.Id);
+                        await _reportesService.SincronizarUsuarioAsync(nuevoUsuario.Id);
 
                         TempData["SuccessMessage"] = $"Empresa '{nuevaEmpresa.Nombre}' creada correctamente. El administrador '{model.NombreAdmin} {model.ApellidoAdminP}' puede iniciar sesión y crear los usuarios de su empresa desde el panel administrativo.";
                         return RedirectToAction(nameof(Index));

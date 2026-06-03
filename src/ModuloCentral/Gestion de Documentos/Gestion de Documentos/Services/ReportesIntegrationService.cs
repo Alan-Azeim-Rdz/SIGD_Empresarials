@@ -76,6 +76,15 @@ namespace Gestion_de_Documentos.Services
                 exito ? null : "El endpoint de Reportes devolvió un código de error.");
         }
 
+        /// <summary>
+        /// Sincroniza la desactivación o borrado de un documento en el Módulo de Reportes.
+        /// </summary>
+        public async Task EliminarDocumentoAsync(int idDocumento)
+        {
+            var payload = new { id_documento = idDocumento };
+            await EnviarPayloadAsync("/api/sync.php?action=eliminar_documento", payload);
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         // SINCRONIZACIÓN EN LOTE
         // Útil para una sincronización inicial o recuperación de fallos masivos.
@@ -87,6 +96,28 @@ namespace Gestion_de_Documentos.Services
         /// </summary>
         public async Task SincronizarTodosAsync(int idUsuarioSolicitante)
         {
+            // 1. Sincronizar Departamentos
+            var deptos = await _context.Departamentos.Where(d => d.Estatus == true).ToListAsync();
+            foreach (var d in deptos)
+            {
+                await SincronizarDepartamentoAsync(d.Id);
+            }
+
+            // 2. Sincronizar Tipos de Documento
+            var tipos = await _context.TipoDocumentos.Where(t => t.Estatus == true).ToListAsync();
+            foreach (var t in tipos)
+            {
+                await SincronizarTipoDocumentoAsync(t.Id);
+            }
+
+            // 3. Sincronizar Usuarios (Espejo completo)
+            var usuarios = await _context.Usuarios.ToListAsync();
+            foreach (var u in usuarios)
+            {
+                await SincronizarUsuarioAsync(u.Id);
+            }
+
+            // 4. Sincronizar Documentos Vigentes
             var documentos = await _context.Documentos
                 .Include(d => d.DocumentoVersions)
                 .Include(d => d.IdTipoDocumentoNavigation)
@@ -109,6 +140,81 @@ namespace Gestion_de_Documentos.Services
             if (payloads.Count == 0) return;
 
             await EnviarPayloadAsync("/api/sync.php?action=sincronizar_batch", payloads);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // SINCRONIZACIÓN DE USUARIOS, DEPARTAMENTOS Y TIPOS
+        // ─────────────────────────────────────────────────────────────────────
+
+        public async Task SincronizarUsuarioAsync(int idUsuario)
+        {
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == idUsuario);
+
+            if (usuario is null)
+            {
+                _logger.LogWarning("[SIGD-Sync] Usuario {Id}: no se encontró en la base de datos.", idUsuario);
+                return;
+            }
+
+            var payload = new UsuarioSyncPayload
+            {
+                IdUsuario = usuario.Id,
+                IdDepartamento = usuario.IdDepartamento,
+                IdEmpresa = usuario.IdEmpresa,
+                Nombre = usuario.Nombre,
+                ApellidoP = usuario.ApellidoP,
+                Correo = usuario.Correo,
+                Estatus = usuario.Estatus ?? true
+            };
+
+            await EnviarPayloadAsync("/api/sync.php?action=sincronizar_usuario", payload);
+        }
+
+        public async Task SincronizarDepartamentoAsync(int idDepartamento)
+        {
+            var depto = await _context.Departamentos
+                .FirstOrDefaultAsync(d => d.Id == idDepartamento);
+
+            if (depto is null)
+            {
+                _logger.LogWarning("[SIGD-Sync] Departamento {Id}: no se encontró en la base de datos.", idDepartamento);
+                return;
+            }
+
+            var payload = new DepartamentoSyncPayload
+            {
+                IdDepartamento = depto.Id,
+                IdEmpresa = depto.IdEmpresa,
+                Nombre = depto.Nombre,
+                Abreviatura = depto.Abreviatura ?? "",
+                Estatus = depto.Estatus ?? true
+            };
+
+            await EnviarPayloadAsync("/api/sync.php?action=sincronizar_departamento", payload);
+        }
+
+        public async Task SincronizarTipoDocumentoAsync(int idTipo)
+        {
+            var tipo = await _context.TipoDocumentos
+                .FirstOrDefaultAsync(t => t.Id == idTipo);
+
+            if (tipo is null)
+            {
+                _logger.LogWarning("[SIGD-Sync] Tipo de documento {Id}: no se encontró en la base de datos.", idTipo);
+                return;
+            }
+
+            var payload = new TipoDocumentoSyncPayload
+            {
+                IdTipo = tipo.Id,
+                IdEmpresa = tipo.IdEmpresa,
+                Nombre = tipo.Nombre,
+                Abreviatura = tipo.Abreviatura ?? "",
+                Estatus = tipo.Estatus ?? true
+            };
+
+            await EnviarPayloadAsync("/api/sync.php?action=sincronizar_tipo", payload);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -284,5 +390,34 @@ namespace Gestion_de_Documentos.Services
         public string RutaArchivoDescarga { get; init; } = string.Empty;
         public string? HashVerificacion   { get; init; }
         public int    IdUsuarioCreacion   { get; init; }
+    }
+
+    public record UsuarioSyncPayload
+    {
+        public int    IdUsuario       { get; init; }
+        public int    IdDepartamento  { get; init; }
+        public int?   IdEmpresa       { get; init; }
+        public string Nombre          { get; init; } = string.Empty;
+        public string ApellidoP       { get; init; } = string.Empty;
+        public string Correo          { get; init; } = string.Empty;
+        public bool   Estatus         { get; init; }
+    }
+
+    public record DepartamentoSyncPayload
+    {
+        public int    IdDepartamento  { get; init; }
+        public int?   IdEmpresa       { get; init; }
+        public string Nombre          { get; init; } = string.Empty;
+        public string Abreviatura     { get; init; } = string.Empty;
+        public bool   Estatus         { get; init; }
+    }
+
+    public record TipoDocumentoSyncPayload
+    {
+        public int    IdTipo          { get; init; }
+        public int?   IdEmpresa       { get; init; }
+        public string Nombre          { get; init; } = string.Empty;
+        public string Abreviatura     { get; init; } = string.Empty;
+        public bool   Estatus         { get; init; }
     }
 }

@@ -10,14 +10,16 @@
     <title>Iniciar Sesión — SIGD Empresarial</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"     <script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
         (function () {
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
         })();
     </script>
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-</head>�� Responsive ─── */
+    <style>
+        /* ─── Responsive ─── */
         @@media (max-width: 1024px) {
             .lp-left { display: none; }
             .lp-right { flex: 1; }
@@ -171,7 +173,6 @@
             <div class="lp-left-footer">
                 v2.0.1 &middot; &copy; 2026 SIGD Empresarial &middot; Powered by .NET 10
             </div>
-
         </div><!-- /lp-left -->
 
         <!-- ═══ COLUMNA DERECHA ═══ -->
@@ -189,6 +190,18 @@
                     <div class="lp-card-title">Bienvenido de vuelta</div>
                     <div class="lp-card-sub">Inicia sesión para continuar a tu panel</div>
                 </div>
+
+                <!-- Exito -->
+                @if (TempData["Exito"] != null)
+                {
+                    <div class="lp-error" style="background-color: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="stroke: var(--success);">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        @TempData["Exito"]
+                    </div>
+                }
 
                 <!-- Error -->
                 @if (ViewBag.Error != null)
@@ -254,7 +267,6 @@
                         </label>
                     </div>
 
-                    <!-- Botón -->
                     <button type="submit" class="lp-btn">
                         Ingresar
                         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -263,13 +275,11 @@
                         </svg>
                     </button>
 
-                    <!-- Registro de Empresa -->
                     <div style="text-align: center; margin-top: 1rem; margin-bottom: 1rem;">
                         <a href="/Auth/RegistroEmpresa" style="font-size: 0.85rem; color: var(--accent2); text-decoration: none; font-weight: 500; transition: color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--accent2)'">
                             ¿Registrar otra empresa? Regístrate aquí
                         </a>
                     </div>
-
                 </form>
 
                 <!-- Divider -->
@@ -304,10 +314,8 @@
                         Monitoreo activo
                     </div>
                 </div>
-
             </div>
         </div><!-- /lp-right -->
-
     </div><!-- /lp-wrap -->
 
     <script>

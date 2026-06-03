@@ -68,6 +68,7 @@ interface IMetadato extends Document {
   ip_subida?: string;
   contenido_extraido?: string;
   id_usuario_creacion: number;
+  nombre_usuario_creacion?: string;
   estatus: boolean;
   fecha_indexacion: Date;
   fecha_modificacion?: Date | null;
@@ -87,6 +88,7 @@ const MetadatoSchema = new Schema<IMetadato>(
     ip_subida: { type: String, default: '127.0.0.1' },
     contenido_extraido: { type: String },
     id_usuario_creacion: { type: Number, required: true },
+    nombre_usuario_creacion: { type: String, default: 'Desconocido' },
     estatus: { type: Boolean, required: true, default: true },
     fecha_indexacion: { type: Date, default: Date.now },
     fecha_modificacion: { type: Date, default: null },
@@ -142,7 +144,8 @@ const swaggerSpec = swaggerJsdoc({
             version: { type: 'string', example: '1.0', description: 'Versión del documento (default "0.1" si no se envía)' },
             ip_subida: { type: 'string', example: '127.0.0.1', description: 'Dirección IP desde la que se subió el documento' },
             contenido_extraido: { type: 'string', example: 'Documento rector del Sistema de Gestión de Calidad de la empresa.' },
-            id_usuario_creacion: { type: 'integer', example: 1, description: 'ID del usuario que aprobó el documento' }
+            id_usuario_creacion: { type: 'integer', example: 1, description: 'ID del usuario que aprobó el documento' },
+            nombre_usuario_creacion: { type: 'string', example: 'Juan Pérez', description: 'Nombre completo del usuario que aprobó el documento' }
           }
         },
         Metadato: {
@@ -249,7 +252,7 @@ app.get('/', (_req, res) => {
  */
 app.post('/indexar', async (req: Request, res: Response) => {
   try {
-    const { id_documento_sql, id_empresa, codigo_interno, titulo, tags, version, contenido_extraido, id_usuario_creacion, ip_subida } = req.body;
+    const { id_documento_sql, id_empresa, codigo_interno, titulo, tags, version, contenido_extraido, id_usuario_creacion, nombre_usuario_creacion, ip_subida } = req.body;
 
     if (!id_documento_sql || !id_empresa || !codigo_interno || !titulo || !id_usuario_creacion) {
       res.status(400).json({
@@ -268,6 +271,7 @@ app.post('/indexar', async (req: Request, res: Response) => {
       docExistente.version = version ?? docExistente.version;
       docExistente.contenido_extraido = contenido_extraido ?? docExistente.contenido_extraido;
       docExistente.id_usuario_creacion = id_usuario_creacion;
+      docExistente.nombre_usuario_creacion = nombre_usuario_creacion ?? docExistente.nombre_usuario_creacion;
       docExistente.ip_subida = ip_subida ?? docExistente.ip_subida;
       docExistente.estatus = true;
       docExistente.fecha_modificacion = new Date();
@@ -290,6 +294,7 @@ app.post('/indexar', async (req: Request, res: Response) => {
       version: version ?? '0.1',
       contenido_extraido: contenido_extraido ?? undefined,
       id_usuario_creacion,
+      nombre_usuario_creacion: nombre_usuario_creacion ?? 'Desconocido',
       ip_subida: ip_subida ?? '127.0.0.1',
       estatus: true,
       fecha_indexacion: new Date()

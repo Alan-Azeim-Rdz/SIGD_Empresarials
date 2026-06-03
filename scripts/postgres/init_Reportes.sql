@@ -6,6 +6,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE departamento (
     id_departamento INT PRIMARY KEY,
+    id_empresa INT,
     nombre VARCHAR(100) NOT NULL,
     abreviatura VARCHAR(20),
     
@@ -22,10 +23,10 @@ CREATE TABLE departamento (
 CREATE TABLE usuario (
     id_usuario INT PRIMARY KEY,
     id_departamento INT REFERENCES departamento(id_departamento),
+    id_empresa INT,
     nombre VARCHAR(100) NOT NULL,
     apellido_p VARCHAR(100) NOT NULL,
     correo VARCHAR(150) UNIQUE NOT NULL,
-    contrasena VARCHAR(255) NOT NULL,
     
     -- Auditoría y Borrado Lógico
     estatus BOOLEAN DEFAULT TRUE,
@@ -39,6 +40,7 @@ CREATE TABLE usuario (
 
 CREATE TABLE tipo_documento (
     id_tipo INT PRIMARY KEY,
+    id_empresa INT,
     nombre VARCHAR(50) NOT NULL,
     abreviatura VARCHAR(10),
     
@@ -54,6 +56,7 @@ CREATE TABLE tipo_documento (
 
 CREATE TABLE documento_vigente (
     id_documento INT PRIMARY KEY,
+    id_empresa INT,
     codigo_interno VARCHAR(50) UNIQUE NOT NULL,
     titulo VARCHAR(255) NOT NULL,
     id_tipo INT REFERENCES tipo_documento(id_tipo),
@@ -131,40 +134,7 @@ CREATE TABLE estadistica_documento (
 -- ==========================================================
 -- Aplicamos las relaciones de los usuarios de auditoría al final para evitar errores circulares.
 
-ALTER TABLE departamento 
-    ADD CONSTRAINT fk_depto_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_depto_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_depto_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE usuario 
-    ADD CONSTRAINT fk_usu_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_usu_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_usu_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE tipo_documento 
-    ADD CONSTRAINT fk_tipo_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_tipo_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_tipo_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE documento_vigente 
-    ADD CONSTRAINT fk_doc_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_doc_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_doc_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE acuse_lectura 
-    ADD CONSTRAINT fk_acuse_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_acuse_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_acuse_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE reporte_descarga 
-    ADD CONSTRAINT fk_descarga_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_descarga_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_descarga_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
-
-ALTER TABLE estadistica_documento 
-    ADD CONSTRAINT fk_est_usu_crea FOREIGN KEY (id_usuario_creacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_est_usu_mod FOREIGN KEY (id_usuario_modificacion) REFERENCES usuario(id_usuario),
-    ADD CONSTRAINT fk_est_usu_elim FOREIGN KEY (id_usuario_eliminacion) REFERENCES usuario(id_usuario);
+-- Restricciones de auditoría en tablas espejo removidas para evitar dependencias circulares durante la sincronización.
 
 
 -- ==========================================================
@@ -220,51 +190,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- D) Funciones de Autenticación (Hasheo en BD)
-CREATE OR REPLACE FUNCTION fn_crear_usuario(
-    p_id_usuario INT,
-    p_id_departamento INT,
-    p_nombre VARCHAR,
-    p_apellido_p VARCHAR,
-    p_correo VARCHAR,
-    p_contrasena_plana VARCHAR,
-    p_id_usuario_creacion INT
-) RETURNS VOID AS $$
-BEGIN
-    INSERT INTO usuario (id_usuario, id_departamento, nombre, apellido_p, correo, contrasena, id_usuario_creacion)
-    VALUES (
-        p_id_usuario, 
-        p_id_departamento, 
-        p_nombre, 
-        p_apellido_p, 
-        p_correo, 
-        UPPER(encode(digest(p_contrasena_plana, 'sha256'), 'hex')), 
-        p_id_usuario_creacion
-    );
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION fn_validar_login(
-    p_correo VARCHAR,
-    p_contrasena_plana VARCHAR
-) RETURNS TABLE (
-    id_usuario INT,
-    id_departamento INT,
-    nombre VARCHAR,
-    apellido_p VARCHAR,
-    correo VARCHAR
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT u.id_usuario, u.id_departamento, u.nombre, u.apellido_p, u.correo
-    FROM usuario u
-    WHERE u.correo = p_correo
-      AND u.contrasena = UPPER(encode(digest(p_contrasena_plana, 'sha256'), 'hex'))
-      AND u.estatus = TRUE;
-END;
-$$ LANGUAGE plpgsql;
-
-
 -- ==========================================================
 -- 4. DATOS SEMILLA (SEED DATA)
 -- Espejo del usuario Super Admin del módulo central para
@@ -277,8 +202,8 @@ VALUES (1, 'Administración General', 'ADM', TRUE)
 ON CONFLICT (id_departamento) DO NOTHING;
 
 -- 4.2 Usuario Super Admin (espejo del módulo central)
-INSERT INTO usuario (id_usuario, id_departamento, nombre, apellido_p, correo, contrasena, estatus)
-VALUES (1, 1, 'Super', 'Administrador', 'admin@sigd.local', UPPER(encode(digest('Admin@SIGD2026!', 'sha256'), 'hex')), TRUE)
+INSERT INTO usuario (id_usuario, id_departamento, nombre, apellido_p, correo, estatus)
+VALUES (1, 1, 'Super', 'Administrador', 'admin@sigd.local', TRUE)
 ON CONFLICT (id_usuario) DO NOTHING;
 
 -- 4.3 Actualizar auditoría del departamento

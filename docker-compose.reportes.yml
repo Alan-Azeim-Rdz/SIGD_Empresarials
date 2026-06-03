@@ -1,0 +1,62 @@
+name: sigd-reportes
+
+services:
+  postgres:
+    image: postgres:16.3-alpine
+    container_name: sigd_postgres
+    environment:
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=${PG_DATABASE}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./scripts/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - sigd_network
+    restart: unless-stopped
+
+  php_reportes:
+    build:
+      context: ./src/ModuloReportes
+    container_name: app_reportes_php
+    depends_on:
+      - postgres
+    volumes:
+      - ./src/ModuloReportes:/var/www/html
+      - /var/www/html/vendor
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${PG_USER}
+      - DB_PASS=${PG_PASSWORD}
+      - DB_NAME=${PG_DATABASE}
+      - SYNC_API_KEY=${SYNC_API_KEY}
+    networks:
+      - sigd_network
+    restart: unless-stopped
+
+  modulo_reportes:
+    image: nginx:1.26.0-alpine
+    container_name: app_reportes_nginx
+    ports:
+      - "8000:80"
+    depends_on:
+      - php_reportes
+    volumes:
+      - ./src/ModuloReportes:/var/www/html
+      - /var/www/html/vendor
+      - ./src/ModuloReportes/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      sigd_network:
+        aliases:
+          - modulo_reportes
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+
+networks:
+  sigd_network:
+    external: true

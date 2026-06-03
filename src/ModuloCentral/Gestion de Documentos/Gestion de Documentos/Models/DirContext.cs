@@ -674,9 +674,11 @@ public partial class DirContext : DbContext
             entity.Property(e => e.FechaRegistro)
                 .HasColumnType("datetime")
                 .HasDefaultValueSql("getdate()");
-            entity.Property(e => e.Estatus)
-                .HasDefaultValueSql("1");
+            entity.Property(e => e.Estatus);
             entity.Property(e => e.CamposPersonalizados)
+                .IsUnicode(true);
+            entity.Property(e => e.TokenValidacion)
+                .HasMaxLength(255)
                 .IsUnicode(true);
 
             // Campos de auditoría

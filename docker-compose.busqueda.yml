@@ -1,0 +1,52 @@
+name: sigd-busqueda
+
+services:
+  mongodb:
+    image: mongo:7.0.9
+    container_name: sigd_mongodb
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_INITDB_DATABASE=sigd_busqueda
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo:/docker-entrypoint-initdb.d:ro
+    networks:
+      sigd_network:
+        aliases:
+          - mongodb
+    restart: unless-stopped
+
+  modulo_busqueda:
+    build:
+      context: ./src/ModuloBusqueda
+      dockerfile: Dockerfile
+      target: production
+    container_name: app_busqueda_node
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/sigd_busqueda?authSource=admin
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/docs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      sigd_network:
+        aliases:
+          - modulo_busqueda
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  sigd_network:
+    external: true

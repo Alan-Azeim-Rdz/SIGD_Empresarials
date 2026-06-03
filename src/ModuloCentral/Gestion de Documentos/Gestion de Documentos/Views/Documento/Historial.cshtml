@@ -1,7 +1,11 @@
 @model Gestion_de_Documentos.Models.Documento
 
+@using System.Security.Claims
 @{
     ViewData["Title"] = "Historial de Versiones";
+    var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    var currentUserId = int.TryParse(userIdStr, out var id) ? id : 0;
+    var esAdminOrCreator = Model.IdUsuarioCreacion == currentUserId || User.IsInRole("Administrador") || User.IsInRole("Super Administrador");
 }
 
 <div class="card card-jewel mt-4">
@@ -25,10 +29,17 @@
                 <tbody>
                     @if(Model.DocumentoVersions != null && Model.DocumentoVersions.Any())
                     {
+                        var maxAprobada = Model.DocumentoVersions.Where(v => v.VersionMinor == 0 && v.Estatus == true).Max(v => (int?)v.NumeroVersion) ?? 0;
                         foreach(var version in Model.DocumentoVersions.OrderByDescending(v => v.NumeroVersion).ThenByDescending(v => v.VersionMinor))
                         {
+                            var isObsoleto = version.VersionMinor == 0 && version.NumeroVersion > 0 && version.NumeroVersion < maxAprobada;
+                            var isVigente = version.VersionMinor == 0 && version.NumeroVersion > 0 && version.NumeroVersion == maxAprobada;
                             <tr>
-                                <td><span class="badge bg-primary">V @version.NumeroVersion.@version.VersionMinor</span></td>
+                                <td>
+                                    <span class="badge bg-primary">V @version.NumeroVersion.@version.VersionMinor</span>
+                                    @if(isVigente) { <span class="badge bg-success ms-1">Vigente</span> }
+                                    @if(isObsoleto) { <span class="badge bg-secondary ms-1">Obsoleto</span> }
+                                </td>
                                 <td>@version.FechaSubida?.ToString("dd/MM/yyyy HH:mm")</td>
                                 <td>@(version.TamanoBytes.HasValue ? (version.TamanoBytes.Value / 1024).ToString("N0") + " KB" : "-")</td>
                                 <td><small class="text-muted text-break" style="max-width: 200px; display: inline-block;" title="@version.HashDocumento">@version.HashDocumento</small></td>
@@ -36,6 +47,16 @@
                                     <a asp-action="Descargar" asp-route-versionId="@version.Id" class="btn btn-sm btn-outline-primary" title="Descargar PDF">
                                         <i class="fas fa-download"></i> Descargar
                                     </a>
+                                    @if (esAdminOrCreator)
+                                    {
+                                        <form asp-action="EliminarVersion" method="post" style="display: inline;" 
+                                              onsubmit="return confirm('¿Estás seguro de eliminar esta versión? Esta acción es irreversible para fines de este historial y podría revertir el estado del documento.');">
+                                            <input type="hidden" name="versionId" value="@version.Id" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar Versión">
+                                                <i class="fas fa-trash-alt"></i> Eliminar
+                                            </button>
+                                        </form>
+                                    }
                                 </td>
                             </tr>
                         }

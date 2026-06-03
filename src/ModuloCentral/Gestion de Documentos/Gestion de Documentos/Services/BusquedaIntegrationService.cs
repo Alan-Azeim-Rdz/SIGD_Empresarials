@@ -82,9 +82,14 @@ namespace Gestion_de_Documentos.Services
                     .FirstOrDefaultAsync();
                 ip = flujoDoc?.IpOrigenRemitente ?? "127.0.0.1";
             }
+            if (ip == "::1") ip = "127.0.0.1";
+            if (ip.StartsWith("::ffff:")) ip = ip.Substring(7);
 
             // TODO: Extract text from PDF in a real implementation
             var contenidoExtraido = $"Documento {doc.Titulo}. Código: {doc.CodigoInterno}. Tipo: {doc.IdTipoDocumentoNavigation?.Nombre}";
+
+            var usuario = await _context.Usuarios.FindAsync(idUsuario);
+            var nombreUsuario = usuario != null ? $"{usuario.Nombre} {usuario.ApellidoP} {usuario.ApellidoM}".Trim() : "Desconocido";
 
             return new
             {
@@ -96,6 +101,7 @@ namespace Gestion_de_Documentos.Services
                 contenido_extraido = contenidoExtraido,
                 atributos_especificos = new { },
                 id_usuario_creacion = idUsuario,
+                nombre_usuario_creacion = nombreUsuario,
                 version = $"{version.NumeroVersion}.{version.VersionMinor}",
                 ip_subida = ip
             };

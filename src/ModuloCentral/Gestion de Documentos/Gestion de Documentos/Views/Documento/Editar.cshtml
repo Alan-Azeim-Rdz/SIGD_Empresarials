@@ -58,7 +58,7 @@
                         <div class="row">
                             @using System.Text.Json
                             @{
-                                var jsonStr = ViewBag.CamposPersonalizados as string;
+                                var jsonStr = ViewBag.CamposPersonalizados as string ?? "[]";
                                 var valoresStr = Model.CamposPersonalizadosValores;
                                 var valoresDict = new Dictionary<string, string>();
                                 if (!string.IsNullOrEmpty(valoresStr))

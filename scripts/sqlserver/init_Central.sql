@@ -229,6 +229,7 @@ CREATE TABLE [dbo].[Documento_Version](
 	[Id] [int] IDENTITY(1,1) NOT NULL,
 	[IdDocumento] [int] NOT NULL,
 	[NumeroVersion] [int] NOT NULL,
+	[VersionMinor] [int] NOT NULL DEFAULT 0,
 	[RutaArchivoFisico] [varchar](500) NOT NULL,
 	[HashDocumento] [varchar](255) NOT NULL,
 	[MotivoCambio] [varchar](500) NULL,
@@ -1573,6 +1574,7 @@ BEGIN
         [FechaRegistro]        DATETIME      NOT NULL DEFAULT(GETDATE()),
         [Estatus]              BIT           NOT NULL DEFAULT(1),
         [CamposPersonalizados] NVARCHAR(MAX) NULL, -- JSON: definición de campos personalizados por empresa
+        [TokenValidacion]      NVARCHAR(255) NULL,
         [IdUsuarioCreacion]    INT           NULL,
         [FechaCreacion]        DATETIME      NULL,
         [IdUsuarioModificacion] INT          NULL,

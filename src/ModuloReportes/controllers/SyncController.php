@@ -173,6 +173,187 @@ class SyncController
     }
 
     // ──────────────────────────────────────────────────────────
+    // SINCRONIZACIÓN DE USUARIO (ESPEJO)
+    // POST /api/sync.php?action=sincronizar_usuario
+    // ──────────────────────────────────────────────────────────
+    public function sincronizarUsuario(): void
+    {
+        $data = $this->leerInput();
+        
+        if (empty($data) || !isset($data['id_usuario'], $data['nombre'], $data['apellido_p'], $data['correo'], $data['id_departamento'])) {
+            http_response_code(400);
+            echo json_encode(['status' => 'error', 'message' => 'Campos obligatorios de usuario ausentes.']);
+            return;
+        }
+
+        try {
+            $query = "
+                INSERT INTO usuario (
+                    id_usuario, id_departamento, id_empresa, nombre, apellido_p, correo, estatus, fecha_creacion
+                )
+                VALUES (
+                    :id_usr, :id_depto, :id_empresa, :nombre, :apellido, :correo, :estatus, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id_usuario)
+                DO UPDATE SET
+                    id_departamento         = EXCLUDED.id_departamento,
+                    id_empresa              = EXCLUDED.id_empresa,
+                    nombre                  = EXCLUDED.nombre,
+                    apellido_p              = EXCLUDED.apellido_p,
+                    correo                  = EXCLUDED.correo,
+                    estatus                 = EXCLUDED.estatus,
+                    fecha_modificacion      = CURRENT_TIMESTAMP
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(':id_usr',      (int)$data['id_usuario'],      PDO::PARAM_INT);
+            $stmt->bindValue(':id_depto',    (int)$data['id_departamento'], PDO::PARAM_INT);
+            $stmt->bindValue(':id_empresa',  isset($data['id_empresa']) ? (int)$data['id_empresa'] : null, PDO::PARAM_INT);
+            $stmt->bindValue(':nombre',      $data['nombre'],               PDO::PARAM_STR);
+            $stmt->bindValue(':apellido',    $data['apellido_p'],           PDO::PARAM_STR);
+            $stmt->bindValue(':correo',      $data['correo'],               PDO::PARAM_STR);
+            $stmt->bindValue(':estatus',     isset($data['estatus']) ? (bool)$data['estatus'] : true, PDO::PARAM_BOOL);
+
+            if (!$stmt->execute()) {
+                throw new Exception('Fallo al ejecutar el UPSERT del usuario.');
+            }
+
+            http_response_code(200);
+            echo json_encode(['status' => 'success', 'message' => 'Usuario sincronizado correctamente.', 'id' => $data['id_usuario']]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Error al sincronizar usuario: ' . $e->getMessage()]);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // SINCRONIZACIÓN DE DEPARTAMENTO
+    // POST /api/sync.php?action=sincronizar_departamento
+    // ──────────────────────────────────────────────────────────
+    public function sincronizarDepartamento(): void
+    {
+        $data = $this->leerInput();
+
+        if (empty($data) || !isset($data['id_departamento'], $data['nombre'])) {
+            http_response_code(400);
+            echo json_encode(['status' => 'error', 'message' => 'Campos obligatorios de departamento ausentes.']);
+            return;
+        }
+
+        try {
+            $query = "
+                INSERT INTO departamento (
+                    id_departamento, id_empresa, nombre, abreviatura, estatus, fecha_creacion
+                )
+                VALUES (
+                    :id_depto, :id_empresa, :nombre, :abreviatura, :estatus, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id_departamento)
+                DO UPDATE SET
+                    id_empresa              = EXCLUDED.id_empresa,
+                    nombre                  = EXCLUDED.nombre,
+                    abreviatura              = EXCLUDED.abreviatura,
+                    estatus                 = EXCLUDED.estatus,
+                    fecha_modificacion      = CURRENT_TIMESTAMP
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(':id_depto',     (int)$data['id_departamento'], PDO::PARAM_INT);
+            $stmt->bindValue(':id_empresa',   isset($data['id_empresa']) ? (int)$data['id_empresa'] : null, PDO::PARAM_INT);
+            $stmt->bindValue(':nombre',       $data['nombre'],               PDO::PARAM_STR);
+            $stmt->bindValue(':abreviatura',  $data['abreviatura'] ?? null,  PDO::PARAM_STR);
+            $stmt->bindValue(':estatus',      isset($data['estatus']) ? (bool)$data['estatus'] : true, PDO::PARAM_BOOL);
+
+            if (!$stmt->execute()) {
+                throw new Exception('Fallo al ejecutar el UPSERT del departamento.');
+            }
+
+            http_response_code(200);
+            echo json_encode(['status' => 'success', 'message' => 'Departamento sincronizado correctamente.', 'id' => $data['id_departamento']]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Error al sincronizar departamento: ' . $e->getMessage()]);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // SINCRONIZACIÓN DE TIPO DE DOCUMENTO
+    // POST /api/sync.php?action=sincronizar_tipo
+    // ──────────────────────────────────────────────────────────
+    public function sincronizarTipoDocumento(): void
+    {
+        $data = $this->leerInput();
+
+        if (empty($data) || !isset($data['id_tipo'], $data['nombre'])) {
+            http_response_code(400);
+            echo json_encode(['status' => 'error', 'message' => 'Campos obligatorios de tipo de documento ausentes.']);
+            return;
+        }
+
+        try {
+            $query = "
+                INSERT INTO tipo_documento (
+                    id_tipo, id_empresa, nombre, abreviatura, estatus, fecha_creacion
+                )
+                VALUES (
+                    :id_tipo, :id_empresa, :nombre, :abreviatura, :estatus, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (id_tipo)
+                DO UPDATE SET
+                    id_empresa              = EXCLUDED.id_empresa,
+                    nombre                  = EXCLUDED.nombre,
+                    abreviatura              = EXCLUDED.abreviatura,
+                    estatus                 = EXCLUDED.estatus,
+                    fecha_modificacion      = CURRENT_TIMESTAMP
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(':id_tipo',      (int)$data['id_tipo'],        PDO::PARAM_INT);
+            $stmt->bindValue(':id_empresa',   isset($data['id_empresa']) ? (int)$data['id_empresa'] : null, PDO::PARAM_INT);
+            $stmt->bindValue(':nombre',       $data['nombre'],              PDO::PARAM_STR);
+            $stmt->bindValue(':abreviatura',  $data['abreviatura'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':estatus',      isset($data['estatus']) ? (bool)$data['estatus'] : true, PDO::PARAM_BOOL);
+
+            if (!$stmt->execute()) {
+                throw new Exception('Fallo al ejecutar el UPSERT del tipo de documento.');
+            }
+
+            http_response_code(200);
+            echo json_encode(['status' => 'success', 'message' => 'Tipo de documento sincronizado correctamente.', 'id' => $data['id_tipo']]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Error al sincronizar tipo de documento: ' . $e->getMessage()]);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // ELIMINAR DOCUMENTO (Sincronización de borrado/obsoleto)
+    // POST /api/sync.php?action=eliminar_documento
+    // ──────────────────────────────────────────────────────────
+    public function eliminarDocumento(): void
+    {
+        $data = $this->leerInput();
+        if (empty($data) || !isset($data['id_documento'])) {
+            http_response_code(400);
+            echo json_encode(['status' => 'error', 'message' => 'Campo id_documento ausente.']);
+            return;
+        }
+
+        try {
+            $query = "UPDATE documento_vigente SET estatus = false, fecha_eliminacion = CURRENT_TIMESTAMP WHERE id_documento = :id";
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(':id', (int)$data['id_documento'], PDO::PARAM_INT);
+            $stmt->execute();
+
+            http_response_code(200);
+            echo json_encode(['status' => 'success', 'message' => 'Documento marcado como no vigente/eliminado en reportes.']);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Error al eliminar documento: ' . $e->getMessage()]);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
     // MÉTODOS PROTEGIDOS (sobreescribibles en tests)
     // ──────────────────────────────────────────────────────────
 

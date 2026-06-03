@@ -18,10 +18,17 @@ namespace Gestion_de_Documentos.Controllers
     public class AuthController : Controller
     {
         private readonly DirContext _context;
+        private readonly Gestion_de_Documentos.Services.ReportesIntegrationService _reportesService;
+        private readonly Gestion_de_Documentos.Services.IEmailService _emailService;
 
-        public AuthController(DirContext context)
+        public AuthController(
+            DirContext context,
+            Gestion_de_Documentos.Services.ReportesIntegrationService reportesService,
+            Gestion_de_Documentos.Services.IEmailService emailService)
         {
             _context = context;
+            _reportesService = reportesService;
+            _emailService = emailService;
         }
 
         // --- LOGIN ---
@@ -30,7 +37,7 @@ namespace Gestion_de_Documentos.Controllers
         {
             // Si ya está logueado, lo mandamos al inicio
             if (User.Identity.IsAuthenticated) return RedirectToAction("Index", "Home");
-            return View();
+            return View("Login_fixed");
         }
 
         [HttpPost]
@@ -47,6 +54,17 @@ namespace Gestion_de_Documentos.Controllers
 
             if (usuario != null && string.Equals(usuario.Contrasena.Trim(), hashContrasena.Trim(), StringComparison.OrdinalIgnoreCase))
             {
+                // Verificar estatus de la empresa antes de iniciar sesión
+                if (usuario.IdEmpresa.HasValue)
+                {
+                    var empresa = await _context.Empresas.FirstOrDefaultAsync(e => e.Id == usuario.IdEmpresa.Value);
+                    if (empresa != null && empresa.Estatus == false)
+                    {
+                        ViewBag.Error = "La empresa no ha sido validada. Por favor, revisa tu correo electrónico para activarla.";
+                        return View("Login_fixed");
+                    }
+                }
+
                 var claims = new List<System.Security.Claims.Claim>
                 {
                     new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, usuario.Id.ToString()),
@@ -144,8 +162,8 @@ namespace Gestion_de_Documentos.Controllers
                 }
             }
 
-            ViewBag.Error = "El Username o la contraseña son incorrectos.";
-            return View();
+            ViewBag.Error = "Credenciales incorrectas. Verifica tu contraseña, o asegúrate de haber validado tu cuenta y correo electrónico.";
+            return View("Login_fixed");
         }
 
         // --- REGISTRO (Protegido por Rol) ---
@@ -235,6 +253,9 @@ namespace Gestion_de_Documentos.Controllers
                         await _context.SaveChangesAsync();
 
                         await transaction.CommitAsync();
+
+                        // Sincronizar usuario espejo en módulo de reportes
+                        await _reportesService.SincronizarUsuarioAsync(nuevoUsuario.Id);
                     }
                     catch (Exception ex)
                     {
@@ -398,6 +419,9 @@ namespace Gestion_de_Documentos.Controllers
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
+
+                    // Sincronizar usuario espejo en módulo de reportes
+                    await _reportesService.SincronizarUsuarioAsync(usuario.Id);
                 }
                 catch (Exception ex)
                 {
@@ -427,6 +451,10 @@ namespace Gestion_de_Documentos.Controllers
                 usuario.FechaEliminacion = DateTime.Now;
                 usuario.IdUsuarioEliminacion = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
                 await _context.SaveChangesAsync();
+
+                // Sincronizar usuario espejo en módulo de reportes
+                await _reportesService.SincronizarUsuarioAsync(usuario.Id);
+
                 TempData["Exito"] = $"Usuario '{usuario.Nombre} {usuario.ApellidoP}' eliminado correctamente.";
             }
             return RedirectToAction("Usuarios");
@@ -463,6 +491,10 @@ namespace Gestion_de_Documentos.Controllers
                 usuario.FechaModificacion = DateTime.Now;
                 usuario.IdUsuarioModificacion = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
                 await _context.SaveChangesAsync();
+
+                // Sincronizar usuario espejo en módulo de reportes
+                await _reportesService.SincronizarUsuarioAsync(usuario.Id);
+
                 TempData["Exito"] = $"Usuario '{usuario.Nombre} {usuario.ApellidoP}' reactivado correctamente.";
             }
             return RedirectToAction("Usuarios");
@@ -475,7 +507,54 @@ namespace Gestion_de_Documentos.Controllers
             return RedirectToAction("Login");
         }
 
-        // --- ACCESO DENEGADO ---
+        // --- VALIDAR REGISTRO ---
+        [HttpGet]
+        public async Task<IActionResult> ValidarRegistro(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+            {
+                ViewBag.Error = "Token de validación no proporcionado.";
+                return View();
+            }
+
+            var empresa = await _context.Empresas.FirstOrDefaultAsync(e => e.TokenValidacion == token);
+
+            if (empresa == null)
+            {
+                ViewBag.Error = "El enlace de validación es inválido o ya ha sido utilizado.";
+                return View();
+            }
+
+            empresa.Estatus = true;
+            empresa.TokenValidacion = null; // Invalida el token
+
+            await _context.SaveChangesAsync();
+
+            // Sincronizar al módulo de reportes
+            try
+            {
+                var deptoAdm = await _context.Departamentos.FirstOrDefaultAsync(d => d.IdEmpresa == empresa.Id);
+                if (deptoAdm != null)
+                {
+                    await _reportesService.SincronizarDepartamentoAsync(deptoAdm.Id);
+                    var usuarioAdm = await _context.Usuarios.FirstOrDefaultAsync(u => u.IdDepartamento == deptoAdm.Id);
+                    if (usuarioAdm != null)
+                    {
+                        await _reportesService.SincronizarUsuarioAsync(usuarioAdm.Id);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Solo loguear el error, no queremos romper el flujo si el módulo de reportes falla temporalmente
+                Console.WriteLine($"Error al sincronizar con Reportes: {ex.Message}");
+            }
+
+            ViewBag.Exito = "¡Cuenta validada con éxito! Ya puedes iniciar sesión en la plataforma.";
+            return View();
+        }
+
+        // --- MANEJO DE ERRORES ---
         public IActionResult AccesoDenegado()
         {
             return View();
@@ -564,6 +643,7 @@ namespace Gestion_de_Documentos.Controllers
                 {
                     try
                     {
+                        var token = Guid.NewGuid().ToString();
                         var nuevaEmpresa = new Empresa
                         {
                             Nombre = model.NombreEmpresa,
@@ -571,7 +651,8 @@ namespace Gestion_de_Documentos.Controllers
                             RFC = model.RFC,
                             CorreoContacto = model.CorreoContacto,
                             FechaRegistro = DateTime.Now,
-                            Estatus = true
+                            Estatus = false,
+                            TokenValidacion = token
                         };
                         _context.Empresas.Add(nuevaEmpresa);
                         await _context.SaveChangesAsync();
@@ -635,8 +716,22 @@ namespace Gestion_de_Documentos.Controllers
 
                         await transaction.CommitAsync();
 
-                        TempData["Exito"] = "¡Empresa registrada exitosamente! Ya puedes iniciar sesión como Administrador y comenzar a configurar tu empresa: agrega departamentos, usuarios, auditores y más desde tu panel administrativo.";
-                        return RedirectToAction("Login");
+                        // Enviar correo de validación
+                        var callbackUrl = Url.Action("ValidarRegistro", "Auth", new { token }, protocol: Request.Scheme);
+                        var emailBody = $@"
+                            <h2>¡Bienvenido a SIGD Empresarial!</h2>
+                            <p>Hola {model.NombreAdmin},</p>
+                            <p>Tu empresa <strong>{model.NombreEmpresa}</strong> ha sido registrada con éxito.</p>
+                            <p>Para activar tu cuenta y poder iniciar sesión, por favor valida tu correo electrónico haciendo clic en el siguiente enlace:</p>
+                            <p><a href='{callbackUrl}'>Validar mi cuenta</a></p>
+                            <br>
+                            <p>Si no has sido tú quien solicitó el registro, ignora este mensaje.</p>
+                        ";
+                        
+                        await _emailService.SendEmailAsync(model.CorreoAdmin, "Validación de Registro - SIGD Empresarial", emailBody);
+
+                        TempData["Exito"] = "Registro exitoso. Se ha enviado un correo al administrador para validar la cuenta.";
+                        return RedirectToAction(nameof(Login));
                     }
                     catch (Exception ex)
                     {

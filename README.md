@@ -2,7 +2,7 @@
 
 # 📄 SIGD Empresarial
 
-### Sistema Integral de Gestión Documental
+### Sistema Integral de Gestión Documental — Multi-Empresa
 
 [![.NET](https://img.shields.io/badge/.NET_10-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![PHP](https://img.shields.io/badge/PHP_8.2-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://www.php.net/)
@@ -20,9 +20,20 @@
 
 ## 📋 Descripción
 
-**SIGD Empresarial** es una plataforma de gestión documental empresarial desarrollada con arquitectura de microservicios. Permite a organizaciones controlar el ciclo de vida completo de sus documentos: desde su creación como borrador hasta su publicación como normativa vigente, con flujos de revisión y aprobación, búsqueda de texto completo y generación de reportes.
+**SIGD Empresarial** es una plataforma multi-tenant de gestión documental empresarial desarrollada con arquitectura de microservicios. Permite a múltiples organizaciones controlar el ciclo de vida completo de sus documentos: desde su creación como borrador hasta su publicación como normativa vigente, con flujos de revisión y aprobación, versionado automático, búsqueda full-text, generación de reportes y validación de registro por correo electrónico.
 
-El sistema está compuesto por **tres módulos independientes** que se comunican entre sí a través de APIs REST y comparten estado mediante sus propias bases de datos especializadas, todos orquestados con Docker Compose.
+El sistema está compuesto por **tres módulos independientes** que se comunican entre sí a través de APIs REST y comparten estado mediante sus propias bases de datos especializadas, todos orquestados con **tres archivos Docker Compose separados** y un script de administración centralizado.
+
+### Características principales
+
+- 🏢 **Multi-Empresa (Multi-Tenant):** Cada empresa registrada opera de forma aislada con sus propios usuarios, departamentos, tipos de documento y flujos.
+- ✉️ **Validación por Correo Electrónico:** Al registrar una nueva empresa, se envía un correo al administrador con un enlace de activación. La empresa permanece inactiva hasta que se valide.
+- 🔢 **Versionado Automático:** Los documentos aprobados terminan en `.0` (ej. `1.0`, `2.0`). Los rechazados incrementan el decimal (ej. `0.1`, `0.2`, `1.1`).
+- 📦 **Obsolescencia Automática:** Cuando un documento pasa de `1.0` a `2.0`, la versión anterior (`1.0`) se marca como obsoleta de forma automática.
+- 🪞 **Tabla Espejo SQL Server ↔ PostgreSQL:** Los usuarios y departamentos del Módulo Central (SQL Server) se sincronizan automáticamente al Módulo de Reportes (PostgreSQL).
+- 🔍 **Búsqueda Global Full-Text:** Los documentos se indexan en MongoDB para búsquedas instantáneas por título, código, contenido y metadatos.
+- 📊 **Reportes y Dashboard:** Dashboard interactivo con métricas de documentos vigentes, descargas, y acuses de lectura.
+- 🛡️ **Auditoría Completa:** Bitácora de accesos, registro de IP de usuario, y trazabilidad de cada acción sobre documentos.
 
 ---
 
@@ -30,19 +41,21 @@ El sistema está compuesto por **tres módulos independientes** que se comunican
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    DOCKER COMPOSE · sigd_network                     │
+│                    DOCKER · sigd_network (bridge)                    │
 │                                                                       │
 │   ┌─────────────────────┐        ┌──────────────────────┐           │
 │   │   🗄️ SQL Server 2022  │        │   🐘 PostgreSQL 16    │           │
-│   │   Puerto 1434         │        │   Puerto 5432         │           │
-│   │   BD: SIGD_Central    │        │   BD: sigd_reportes   │           │
+│   │   Puerto 1434         │        │   Puerto 5433         │           │
+│   │   BD: SIGD_Central    │        │   BD: Postgres_SIGD   │           │
+│   │   (docker-compose.    │        │   (docker-compose.    │           │
+│   │    central.yml)       │        │    reportes.yml)      │           │
 │   └──────────┬────────────┘        └──────────┬───────────┘           │
 │              │ EF Core                         │ PDO                   │
 │   ┌──────────▼────────────┐        ┌──────────▼───────────┐           │
-│   │  🏢 MÓDULO CENTRAL     │        │  📊 MÓDULO REPORTES   │           │
-│   │  ASP.NET Core 10 C#   │◄──────►│  PHP 8.2 + Apache    │           │
-│   │  Puerto 5000           │  API   │  Puerto 8000          │           │
-│   └──────────┬────────────┘  REST  └──────────────────────┘           │
+│   │  🏢 MÓDULO CENTRAL     │  API   │  📊 MÓDULO REPORTES   │           │
+│   │  ASP.NET Core 10 C#   │◄──────►│  PHP 8.2 + Nginx     │           │
+│   │  Puerto 5000           │  REST  │  Puerto 8000          │           │
+│   └──────────┬────────────┘        └──────────────────────┘           │
 │              │                                                         │
 │              │ POST /indexar                                           │
 │              │ GET  /buscar                                            │
@@ -50,6 +63,8 @@ El sistema está compuesto por **tres módulos independientes** que se comunican
 │   │  🔍 MÓDULO BÚSQUEDA    │        │   🍃 MongoDB 7.0       │           │
 │   │  Node.js + TypeScript │◄──────►│   Puerto 27017        │           │
 │   │  Express 5 · Puerto 3000│       │   BD: sigd_busqueda   │           │
+│   │  (docker-compose.      │       │   (docker-compose.    │           │
+│   │   busqueda.yml)        │       │    busqueda.yml)      │           │
 │   └───────────────────────┘        └──────────────────────┘           │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -66,8 +81,10 @@ El sistema está compuesto por **tres módulos independientes** que se comunican
 |--------|---------|----------|-----------|
 | Módulo Central | Módulo Búsqueda | `POST /indexar` | Indexar documento al publicarlo |
 | Módulo Central | Módulo Búsqueda | `GET /buscar?q=` | Búsqueda full-text desde la UI |
-| Módulo Central | Módulo Reportes | `POST /api/sync` | Sincronizar metadatos de documentos |
-| Módulo Reportes | Módulo Búsqueda | `GET /buscar?q=` | Portal de operarios con búsqueda |
+| Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_documento` | Sincronizar documentos vigentes |
+| Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_usuario` | Sincronizar tabla espejo de usuarios |
+| Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_departamento` | Sincronizar tabla espejo de departamentos |
+| Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_tipo` | Sincronizar tipos de documento |
 
 ---
 
@@ -78,22 +95,22 @@ El sistema está compuesto por **tres módulos independientes** que se comunican
 | Módulo | Lenguaje | Framework | Base de Datos | ORM / Driver |
 |--------|----------|-----------|---------------|--------------|
 | Central | C# | ASP.NET Core 10.0 MVC | SQL Server 2022 | Entity Framework Core 10 |
-| Reportes | PHP 8.2 | Apache + PDO nativo | PostgreSQL 16 | PDO (pdo_pgsql) |
+| Reportes | PHP 8.2 | Nginx + PHP-FPM + PDO | PostgreSQL 16 | PDO (pdo_pgsql) |
 | Búsqueda | TypeScript | Express 5.2 | MongoDB 7.0 | Mongoose 9 |
 
 ### Infraestructura y herramientas
 
 | Categoría | Tecnología | Versión |
 |-----------|-----------|---------|
-| Contenedores | Docker + Docker Compose | Compose 3.8 |
+| Contenedores | Docker + Docker Compose | v2 (plugin) |
+| Orquestación | 3 archivos `docker-compose.*.yml` + script `start-sigd.ps1` | — |
+| Envío de correo | SMTP (Gmail / Outlook) | `SmtpEmailService.cs` |
 | Logging (Reportes) | Monolog | ^3.0 |
 | Logging (Búsqueda) | Pino + Pino-Pretty | ^9.0 |
 | Generación PDF | dompdf | ^3.1 |
 | Documentación API | Swagger UI / OpenAPI 3 | — |
 | Testing (Búsqueda) | Jest + ts-jest + Supertest | Jest 29 |
 | Testing (Reportes) | PHPUnit | ^11.0 |
-| Hot-reload (.NET) | `dotnet watch` | — |
-| Hot-reload (Node) | ts-node-dev | ^2.0 |
 
 ---
 
@@ -106,6 +123,7 @@ Antes de levantar el proyecto asegúrate de tener instalado:
 | **Docker Desktop** | 24.x | `docker --version` |
 | **Docker Compose** | 2.x (plugin) | `docker compose version` |
 | **Git** | 2.x | `git --version` |
+| **PowerShell** (Windows) | 5.1+ | `$PSVersionTable.PSVersion` |
 
 > **Nota:** No necesitas instalar .NET, PHP ni Node.js localmente. Todo corre dentro de contenedores Docker.
 
@@ -129,69 +147,113 @@ git checkout development
 
 ### Paso 2 — Configurar variables de entorno
 
-```bash
-# Copiar la plantilla de configuración
-cp .env.example .env
-```
-
-Edita el archivo `.env` con tus credenciales:
+Crea un archivo `.env` en la raíz del proyecto con el siguiente contenido (modifica las contraseñas a tu gusto):
 
 ```dotenv
 # ── SQL Server (Módulo Central) ──────────────────────────────
 SQL_DATABASE=SIGD_Central
-SQL_SA_PASSWORD=TuPassword123!
+SQL_SA_PASSWORD=TuPasswordSeguro123!
 APP_DB_USER=sa
-APP_DB_PASSWORD=TuPassword123!
+APP_DB_PASSWORD=TuPasswordSeguro123!
 
 # ── PostgreSQL (Módulo Reportes) ─────────────────────────────
-PG_USER=sigd_user
+PG_USER=Super_Admin
 PG_PASSWORD=TuPasswordPostgres!
-PG_DATABASE=sigd_reportes
+PG_DATABASE=Postgres_SIGD
 
 # ── MongoDB (Módulo Búsqueda) ────────────────────────────────
-MONGO_USERNAME=sigd_mongo
+MONGO_USERNAME=Super_Admin
 MONGO_PASSWORD=TuPasswordMongo!
 
 # ── API Key compartida entre módulos ─────────────────────────
-SYNC_API_KEY=una_clave_secreta_larga_y_aleatoria
+SYNC_API_KEY=sigd_sync_secret_2026
 ```
 
 > ⚠️ **Nunca** subas el archivo `.env` real al repositorio. Ya está en `.gitignore`.
 
-### Paso 3 — Levantar el sistema
+### Paso 3 — Configurar el servicio SMTP (Correo electrónico)
 
-```bash
-# Construir imágenes y levantar todos los servicios
-docker compose up --build
+Para que la validación de correo funcione al registrar nuevas empresas, debes configurar las credenciales SMTP en el archivo:
+
+```
+src/ModuloCentral/Gestion de Documentos/Gestion de Documentos/appsettings.json
+```
+
+Busca la sección `"Smtp"` y edítala con tus datos reales:
+
+```json
+"Smtp": {
+    "Host": "smtp.gmail.com",
+    "Port": 587,
+    "Username": "tu_correo@gmail.com",
+    "Password": "tu_contraseña_de_aplicacion",
+    "From": "tu_correo@gmail.com"
+}
+```
+
+> ⚠️ **Si usas Gmail:** No uses tu contraseña normal. Debes generar una **Contraseña de Aplicación**:
+> 1. Ve a [myaccount.google.com](https://myaccount.google.com/) → Seguridad.
+> 2. Activa la **Verificación en dos pasos** si no la tienes.
+> 3. Busca **Contraseñas de aplicaciones** y genera una nueva.
+> 4. Copia la contraseña de 16 letras y pégala en el campo `"Password"`.
+
+> 💡 **Si usas Outlook/Hotmail:** Cambia el Host a `smtp-mail.outlook.com`.
+
+### Paso 4 — Levantar el sistema
+
+El proyecto incluye un **script de administración** que simplifica todas las operaciones Docker. Funciona tanto en Windows (PowerShell) como en Linux/macOS (Bash).
+
+#### Opción A: Menú interactivo (recomendado para primera vez)
+
+```powershell
+# Windows (PowerShell)
+.\start-sigd.ps1
+
+# Linux / macOS
+chmod +x start-sigd.sh
+./start-sigd.sh
+```
+
+Se mostrará un menú con opciones numeradas. Elige **1. Iniciar todos los servicios (Start)**.
+
+#### Opción B: Comando directo
+
+```powershell
+# Windows
+.\start-sigd.ps1 start
+
+# Linux / macOS
+./start-sigd.sh start
 ```
 
 La primera vez puede tardar **5–10 minutos** mientras Docker descarga las imágenes base y compila los módulos. Las ejecuciones posteriores son mucho más rápidas.
 
-Para ejecutar en segundo plano:
+El script se encarga automáticamente de:
+1. ✅ Crear la red Docker `sigd_network` si no existe.
+2. ✅ Levantar primero las bases de datos (Búsqueda y Reportes) y luego el Módulo Central.
+3. ✅ Construir las imágenes con `--build` en cada inicio.
+4. ✅ Ejecutar los scripts de inicialización de cada base de datos (tablas, seed data).
+
+### Paso 5 — Verificar que todos los servicios estén activos
 
 ```bash
-docker compose up --build -d
+docker ps
 ```
 
-### Paso 4 — Verificar que todos los servicios estén activos
-
-```bash
-docker compose ps
-```
-
-Deberías ver los 6 servicios con estado `running` / `healthy`:
+Deberías ver **7 contenedores** con estado `Up`:
 
 ```
-NAME                   STATUS          PORTS
-sigd_sqlserver         running         0.0.0.0:1434->1433/tcp
-sigd_postgres          running         0.0.0.0:5432->5432/tcp
-sigd_mongodb           running         0.0.0.0:27017->27017/tcp
-sigd_central           running         0.0.0.0:5000->5000/tcp
-sigd_reportes          running         0.0.0.0:8000->80/tcp
-sigd_busqueda          running         0.0.0.0:3000->3000/tcp
+CONTAINER ID   IMAGE                          STATUS          PORTS                    NAMES
+xxxxxxxxxxxx   sigd-central-modulo_central    Up              0.0.0.0:5000->8080/tcp   app_central_dotnet
+xxxxxxxxxxxx   mcr.microsoft.com/mssql/...    Up (healthy)    0.0.0.0:1434->1433/tcp   sigd_sqlserver
+xxxxxxxxxxxx   nginx:1.26.0-alpine            Up              0.0.0.0:8000->80/tcp     app_reportes_nginx
+xxxxxxxxxxxx   sigd-reportes-php_reportes     Up              9000/tcp                 app_reportes_php
+xxxxxxxxxxxx   postgres:16.3-alpine           Up              0.0.0.0:5433->5432/tcp   sigd_postgres
+xxxxxxxxxxxx   sigd-busqueda-modulo_busqueda  Up              0.0.0.0:3000->3000/tcp   app_busqueda_node
+xxxxxxxxxxxx   mongo:7.0.9                    Up              0.0.0.0:27017->27017/tcp  sigd_mongodb
 ```
 
-### Paso 5 — Acceder al sistema
+### Paso 6 — Acceder al sistema
 
 Una vez levantado, abre tu navegador:
 
@@ -204,22 +266,86 @@ Una vez levantado, abre tu navegador:
 
 ---
 
-## 🔑 Credenciales Iniciales
+## 🔑 Credenciales Iniciales (Datos de Demostración)
 
-> Estas credenciales son para el entorno de desarrollo y demos. **Cámbialas en producción.**
+> Estas credenciales son para el entorno de desarrollo y demos. Los scripts de seed crean automáticamente una empresa de demostración con usuarios de prueba.
 
 | Campo | Valor |
 |-------|-------|
-| **URL de acceso** | http://localhost:5000/login |
+| **URL de acceso** | http://localhost:5000/Auth/Login |
 | **Correo** | `admin@sigd.local` |
-| **Contraseña** | `Admin2026*` |
-| **Rol** | Administrador del sistema |
+| **Contraseña** | `Admin@SIGD2026!` |
+| **Rol** | Super Administrador |
+
+### Usuarios de demostración adicionales
+
+El seed genera 8 usuarios de prueba con distintos roles:
+
+| Correo | Contraseña | Rol |
+|--------|-----------|-----|
+| `admin@demo.local` | `Admin@SIGD2026!` | Administrador |
+| `jlopez@demo.local` | `Contra@1234` | Superior |
+| `mgarcia@demo.local` | `Contra@1234` | Superior |
+| `crojas@demo.local` | `Contra@1234` | Usuario |
+| `aherrera@demo.local` | `Contra@1234` | Usuario |
+| `lmendez@demo.local` | `Contra@1234` | Usuario |
+| `ptorres@demo.local` | `Contra@1234` | Usuario |
+| `rnavarro@demo.local` | `Contra@1234` | Usuario |
 
 El administrador tiene acceso completo para:
 - ✅ Crear y gestionar usuarios, roles y permisos
-- ✅ Configurar departamentos y empresas
+- ✅ Configurar departamentos y tipos de documento
 - ✅ Gestionar el flujo de aprobación de documentos
 - ✅ Ver bitácoras de acceso y auditoría
+- ✅ Registrar nuevas empresas
+
+---
+
+## 🏢 Registro de Nuevas Empresas
+
+SIGD Empresarial es multi-tenant. Cualquier persona puede registrar una nueva empresa desde la pantalla de Login.
+
+### Flujo de registro
+
+```
+Pantalla de Login           Formulario de              Correo de               Validación
+    │                       Registro Empresa           Validación              exitosa
+    │  Clic en              ────────────────           ──────────              ──────────
+    │  "Regístrate aquí"    Nombre empresa             Se envía un email       El admin hace
+    ├─────────────────────► RFC                        al correo del     ────► clic en el enlace
+    │                       Correo admin          ───► administrador           del correo
+    │                       Contraseña admin           con un enlace           │
+    │                       etc.                       de activación           ▼
+    │                                                                    ┌─────────────┐
+    │                                                                    │ ✅ Empresa    │
+    │◄───────────────────────────────────────────────────────────────────│    activada   │
+    │  Ahora puede iniciar sesión                                       └─────────────┘
+```
+
+### Seguridad del registro
+
+1. **La empresa se crea con `Estatus = false`** (inactiva) hasta que se valide el correo.
+2. **No se puede iniciar sesión** con una empresa no validada. El sistema muestra un mensaje de error claro.
+3. **El token de validación es único** (GUID) y se invalida automáticamente después de su primer uso.
+4. **Se crea automáticamente:** Un departamento "Administración" y un usuario con rol "Administrador" para la nueva empresa.
+
+---
+
+## 🔢 Sistema de Versionado de Documentos
+
+El versionado sigue reglas específicas basadas en el flujo de aprobación:
+
+| Escenario | Versión resultante | Ejemplo |
+|-----------|-------------------|---------|
+| Primer documento sin historial, aprobado | `1.0` | — |
+| Primer documento, rechazado 1 vez | `0.1` | — |
+| Primer documento, rechazado 3 veces | `0.3` | — |
+| Documento con 2 versiones aprobadas, rechazado 2 veces | `2.2` | Existían `1.0` y `2.0`, se rechazó dos veces |
+| Documento rechazado y luego aprobado | `X.0` | El decimal se resetea a `.0` al aprobar |
+
+### Obsolescencia automática
+
+Cuando un documento alcanza una nueva versión vigente (ej. pasa de `1.0` a `2.0`), la versión anterior (`1.0`) se marca automáticamente como **Obsoleta**. Esto es un proceso automático del sistema, no una acción manual del usuario.
 
 ---
 
@@ -228,144 +354,160 @@ El administrador tiene acceso completo para:
 ```
 SIGD_Empresarial/
 │
-├── 📄 docker-compose.yml          # Orquestación principal (6 servicios)
-├── 📄 docker-compose.debug.yml    # Configuración para debugging
-├── 📄 .env.example                # Plantilla de variables de entorno
+├── 📄 docker-compose.central.yml   # Módulo Central + SQL Server
+├── 📄 docker-compose.reportes.yml  # Módulo Reportes + PostgreSQL + Nginx
+├── 📄 docker-compose.busqueda.yml  # Módulo Búsqueda + MongoDB
+├── 📄 .env                         # Variables de entorno (NO se sube al repo)
 ├── 📄 .gitignore
+├── 📄 start-sigd.ps1               # Script de administración Docker (Windows)
+├── 📄 start-sigd.sh                # Script de administración Docker (Linux/macOS)
 │
 ├── 📂 src/
 │   │
-│   ├── 📂 ModuloCentral/          # ASP.NET Core 10 · C# MVC
+│   ├── 📂 ModuloCentral/           # ASP.NET Core 10 · C# MVC
 │   │   └── Gestion de Documentos/
-│   │       ├── Controllers/       # Auth, Admin, Documento, Flujo, Búsqueda
-│   │       ├── Models/            # EF Entities + DbContext (DirContext)
-│   │       ├── Views/             # Razor Views (.cshtml)
-│   │       ├── Services/          # ReportesIntegration, BusquedaIntegration, MongoGridFs
-│   │       ├── Program.cs         # DI, autenticación, HttpClients
-│   │       ├── appsettings.json
-│   │       └── Dockerfile         # Multi-stage: dev (watch) → publish → final
+│   │       ├── Controllers/        # Auth, Admin, Documento, Flujo, Búsqueda,
+│   │       │                       # SuperAdmin, Modulos, Home
+│   │       ├── Models/             # EF Entities + DbContext (DirContext)
+│   │       ├── Views/              # Razor Views (.cshtml)
+│   │       ├── Services/           # ReportesIntegration, BusquedaIntegration,
+│   │       │                       # MongoGridFs, SmtpEmail
+│   │       ├── Program.cs          # DI, autenticación, HttpClients
+│   │       ├── appsettings.json    # Config DB, SMTP, módulos externos
+│   │       └── Dockerfile          # Multi-stage: restore → build → publish
 │   │
-│   ├── 📂 ModuloReportes/         # PHP 8.2 + Apache
-│   │   ├── api/                   # sync.php · v1/dashboard.php · v1/portal.php
-│   │   ├── config/                # Database.php · Logger.php
-│   │   ├── controllers/           # Dashboard, Reporte, Sync
-│   │   ├── models/                # Acuse.php
-│   │   ├── views/                 # dashboard.php · portal_operario.php
-│   │   ├── tests/                 # PHPUnit tests
-│   │   ├── composer.json          # dompdf · monolog · phpunit
-│   │   ├── index.php              # Punto de entrada
-│   │   └── Dockerfile             # php:8.2-apache + pdo_pgsql + composer
+│   ├── 📂 ModuloReportes/          # PHP 8.2 + Nginx
+│   │   ├── api/                    # sync.php (endpoint de sincronización)
+│   │   ├── config/                 # Database.php · Logger.php
+│   │   ├── controllers/            # Dashboard, Reporte, Sync
+│   │   ├── models/                 # Acuse.php
+│   │   ├── views/                  # dashboard.php · portal_operario.php
+│   │   ├── nginx/                  # default.conf (Nginx reverse-proxy a PHP-FPM)
+│   │   ├── tests/                  # PHPUnit tests
+│   │   ├── composer.json           # dompdf · monolog · phpunit
+│   │   ├── index.php               # Punto de entrada
+│   │   └── Dockerfile              # php:8.2-fpm + pdo_pgsql + composer
 │   │
-│   └── 📂 ModuloBusqueda/         # Node.js 20 · TypeScript · Express 5
-│       ├── __tests__/             # 35 tests · 100% cobertura de líneas
-│       ├── index.ts               # App Express + modelo Mongoose + endpoints
-│       ├── server.ts              # Punto de entrada
-│       ├── package.json           # express · mongoose · pino · swagger
+│   └── 📂 ModuloBusqueda/          # Node.js 20 · TypeScript · Express 5
+│       ├── __tests__/              # 35 tests · cobertura de líneas
+│       ├── index.ts                # App Express + modelo Mongoose + endpoints
+│       ├── server.ts               # Punto de entrada
+│       ├── package.json            # express · mongoose · pino · swagger
 │       ├── tsconfig.json
 │       ├── jest.config.ts
-│       └── Dockerfile             # Multi-stage: dev (ts-node-dev) → builder → prod
+│       └── Dockerfile              # Multi-stage: dev (ts-node-dev) → builder → prod
 │
 ├── 📂 scripts/
-│   ├── sqlserver/                 # init_Central.sql · seed.sql · migrations
-│   ├── postgres/                  # init_Reportes.sql · seed_demo.sql · migrations
-│   ├── mongo/                     # init_busqueda.js · seed_demo.js
-│   └── seeder/                    # seed_databases.py (seeder Python)
+│   ├── sqlserver/
+│   │   ├── entrypoint.sh           # Arranca SQL Server y espera al init
+│   │   ├── wait-and-init.sh        # Espera a que SQL esté listo y ejecuta init + seed
+│   │   ├── init_Central.sql        # Creación de tablas, empresa, soporte multi-tenant
+│   │   └── seed.sql                # Datos de demostración (usuarios, documentos, etc.)
+│   ├── postgres/
+│   │   ├── init_Reportes.sql       # Tablas espejo: departamento, usuario, documento_vigente, etc.
+│   │   └── seed_demo.sql           # Datos espejo de demostración
+│   └── mongo/
+│       ├── init_busqueda.js        # Índices y colección de documentos
+│       └── seed_demo.js            # Documentos indexados de demostración
 │
-└── 📂 db/                         # Scripts SQL complementarios
+└── 📂 db/                          # Scripts SQL complementarios
 ```
 
 ---
 
-## 🐳 Comandos Docker Útiles
+## 🐳 Script de Administración (`start-sigd`)
 
-### Gestión del sistema completo
+El proyecto incluye un script que simplifica la gestión de Docker. Disponible en PowerShell (`.ps1`) y Bash (`.sh`).
 
-```bash
-# Levantar todos los servicios (reconstruyendo imágenes)
-docker compose up --build
+### Menú interactivo
 
-# Levantar en background
-docker compose up -d
-
-# Detener todos los servicios (conserva datos)
-docker compose stop
-
-# Detener y eliminar contenedores (conserva volúmenes/datos)
-docker compose down
-
-# Detener y eliminar TODO (incluyendo datos de BD) ⚠️
-docker compose down -v
+```powershell
+.\start-sigd.ps1       # Windows
+./start-sigd.sh        # Linux/macOS
 ```
 
-### Monitoreo y logs
-
-```bash
-# Ver estado de todos los servicios
-docker compose ps
-
-# Ver logs de todos los servicios en tiempo real
-docker compose logs -f
-
-# Ver logs de un servicio específico
-docker compose logs -f sigd_central
-docker compose logs -f sigd_reportes
-docker compose logs -f sigd_busqueda
-
-# Ver últimas 100 líneas de un servicio
-docker compose logs --tail=100 sigd_central
+```
+=============================================
+      SIGD EMPRESARIAL — DOCKER MANAGER
+=============================================
+1. Iniciar todos los servicios (Start)
+2. Detener todos los servicios (Stop)
+3. Reiniciar todos los servicios (Restart)
+4. Ver logs del sistema (Logs)
+5. Reconstruir imágenes sin caché (Build)
+6. Limpiar volúmenes / Reiniciar BD (Clean)
+7. Iniciar módulo específico
+8. Detener módulo específico
+9. Limpiar módulo específico (Clean)
+10. Salir
+=============================================
 ```
 
-### Acceder a contenedores
+### Comandos directos
 
-```bash
-# Shell en el módulo central (.NET)
-docker compose exec sigd_central bash
+```powershell
+# Iniciar todo (construye imágenes + levanta contenedores)
+.\start-sigd.ps1 start
 
-# Shell en el módulo de reportes (PHP)
-docker compose exec sigd_reportes bash
+# Detener todo (conserva datos en volúmenes)
+.\start-sigd.ps1 stop
 
-# Shell en el módulo de búsqueda (Node.js)
-docker compose exec sigd_busqueda sh
+# Reiniciar servicios
+.\start-sigd.ps1 restart
 
-# Consola SQL Server
-docker compose exec sigd_sqlserver /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P "$SQL_SA_PASSWORD" -No
+# Reconstruir imágenes sin caché
+.\start-sigd.ps1 build
 
-# Consola PostgreSQL
-docker compose exec sigd_postgres psql -U $PG_USER -d sigd_reportes
+# Ver logs en tiempo real
+.\start-sigd.ps1 logs
 
-# Consola MongoDB
-docker compose exec sigd_mongodb mongosh -u $MONGO_USERNAME -p $MONGO_PASSWORD
+# ⚠️ LIMPIAR TODO (destruye volúmenes = borra bases de datos)
+.\start-sigd.ps1 clean
 ```
 
-### Mantenimiento
+### Gestionar un módulo individual
 
-```bash
-# Reconstruir solo un servicio sin reiniciar los demás
-docker compose up --build sigd_central
+```powershell
+# Solo levantar el módulo central
+.\start-sigd.ps1 start central
 
-# Reiniciar un servicio
-docker compose restart sigd_busqueda
+# Solo limpiar la base de datos de reportes (PostgreSQL)
+.\start-sigd.ps1 clean reportes
 
-# Ver uso de recursos
-docker stats
-
-# Limpiar imágenes y caché de build no utilizadas
-docker system prune --volumes
+# Módulos disponibles: central, reportes, busqueda
 ```
 
-### Ejecutar tests
+> **⚠️ Diferencia importante entre `stop` y `clean`:**
+> - `stop` (`docker compose down`): Elimina contenedores pero **conserva los datos** de las bases de datos en los volúmenes Docker.
+> - `clean` (`docker compose down -v`): Elimina contenedores **y los volúmenes**, lo que **borra todas las bases de datos**. Al volver a iniciar, se ejecutarán los scripts de inicialización desde cero.
 
-```bash
-# Tests del Módulo Búsqueda (Jest · 35 tests)
-docker compose exec sigd_busqueda npm test
+---
 
-# Tests con modo watch
-docker compose exec sigd_busqueda npm run test:watch
+## 🔄 Sincronización de Datos (Tabla Espejo)
 
-# Tests del Módulo Reportes (PHPUnit)
-docker compose exec sigd_reportes ./vendor/bin/phpunit tests/
-```
+El Módulo Central (SQL Server) es la fuente de verdad para los datos de usuarios, departamentos y tipos de documento. El Módulo de Reportes (PostgreSQL) mantiene una **tabla espejo** que se sincroniza automáticamente mediante llamadas API REST.
+
+### ¿Cuándo se sincroniza?
+
+| Acción en Módulo Central | Se sincroniza a PostgreSQL |
+|--------------------------|---------------------------|
+| Crear usuario | ✅ Automático |
+| Editar usuario | ✅ Automático |
+| Eliminar usuario (soft delete) | ✅ Automático |
+| Reactivar usuario | ✅ Automático |
+| Crear departamento | ✅ Automático |
+| Aprobar/publicar documento | ✅ Automático |
+| Validar empresa por correo | ✅ Automático |
+
+### Datos sincronizados por tabla
+
+| Tabla SQL Server | Tabla PostgreSQL | Campos clave |
+|-----------------|------------------|--------------|
+| `Empresa` → | `(implícito via id_empresa)` | ID, Nombre |
+| `Departamento` → | `departamento` | ID, Nombre, Abreviatura, IdEmpresa |
+| `Usuario` → | `usuario` | ID, Nombre, Apellido, Correo, IdEmpresa |
+| `TipoDocumento` → | `tipo_documento` | ID, Nombre, Abreviatura, IdEmpresa |
+| `Documento` → | `documento_vigente` | ID, Código, Título, Versión, Ruta |
 
 ---
 
@@ -394,8 +536,9 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
                                                                     ▼
                                                            ┌──────────────────┐
                                                            │    OBSOLETO      │
-                                                           │  (Reemplazado    │
-                                                           │   por v. nueva)  │
+                                                           │  (Automático al  │
+                                                           │   publicar nueva │
+                                                           │   versión)       │
                                                            └──────────────────┘
 ```
 
@@ -406,11 +549,11 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 | 📝 **Borrador** | Documento en creación/edición | Autor del documento |
 | 🔎 **Revisión** | Enviado para revisión técnica | Revisor asignado |
 | ✅ **Aprobado** | Revisado y listo para publicar | Aprobador / Admin |
-| 🚫 **Rechazado** | Devuelto con observaciones | — (vuelve al autor) |
-| 📢 **Vigente** | Publicado como normativa activa | Admin (para publicar) |
-| 📦 **Obsoleto** | Reemplazado por una versión más nueva | Sistema automático |
+| 🚫 **Rechazado** | Devuelto con observaciones (versión decimal incrementa) | — (vuelve al autor) |
+| 📢 **Vigente** | Publicado como normativa activa (versión termina en `.0`) | Admin (para publicar) |
+| 📦 **Obsoleto** | Reemplazado automáticamente por una versión más nueva | Sistema automático |
 
-> Cuando un documento pasa a **Vigente**, el Módulo Central notifica automáticamente al Módulo de Búsqueda (`POST /indexar`) para indexarlo y hacerlo buscable, y al Módulo de Reportes (`POST /api/sync`) para actualizar estadísticas.
+> Cuando un documento pasa a **Vigente**, el Módulo Central notifica automáticamente al Módulo de Búsqueda (`POST /indexar`) para indexarlo y hacerlo buscable, y al Módulo de Reportes (`POST /api/sync.php`) para actualizar las tablas espejo.
 
 ---
 
@@ -420,12 +563,19 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 
 | Ruta | Descripción |
 |------|-------------|
-| `/login` | Inicio de sesión |
-| `/home` | Dashboard principal |
-| `/admin` | Panel de administración (usuarios, roles, permisos) |
-| `/documento` | Gestión de documentos |
-| `/flujo` | Flujos de aprobación |
-| `/busqueda` | Búsqueda de documentos (integrada con Módulo Búsqueda) |
+| `/Auth/Login` | Inicio de sesión |
+| `/Auth/RegistroEmpresa` | Registro público de nuevas empresas |
+| `/Auth/ValidarRegistro?token=xxx` | Validación de correo electrónico |
+| `/Home` | Dashboard principal |
+| `/Admin` | Panel de administración (usuarios, departamentos, tipos doc.) |
+| `/Auth/Registro` | Crear usuario dentro de tu empresa (requiere rol Admin) |
+| `/Auth/Usuarios` | Gestión de usuarios de la empresa |
+| `/Documento` | Gestión de documentos |
+| `/Flujo/Pendientes` | Flujos de aprobación pendientes |
+| `/Busqueda/Global` | Búsqueda global de documentos (integrada con MongoDB) |
+| `/Modulos/Dashboard` | Dashboard de reportes (proxy al Módulo Reportes) |
+| `/Modulos/Portal` | Portal de normativas (proxy al Módulo Reportes) |
+| `/SuperAdmin` | Consola de Super Administrador (gestión de empresas) |
 
 ### 📊 Módulo Reportes — `http://localhost:8000`
 
@@ -435,7 +585,7 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 | `/portal` | Portal público de operarios |
 | `/api/v1/dashboard` | API JSON de métricas del dashboard |
 | `/api/v1/portal` | API JSON del portal de operarios |
-| `/api/sync` | Endpoint de sincronización (llamado por .NET) |
+| `/api/sync.php` | Endpoint de sincronización (llamado por .NET) |
 
 ### 🔍 Módulo Búsqueda — `http://localhost:3000`
 
@@ -446,6 +596,108 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 | `/documento/:id` | `GET` | Obtener metadatos por ID o código |
 | `/docs` | `GET` | Swagger UI interactivo |
 | `/docs.json` | `GET` | Especificación OpenAPI 3.0 |
+
+---
+
+## 🐳 Comandos Docker Útiles (Sin script)
+
+Si prefieres usar Docker Compose directamente en lugar del script:
+
+### Gestión por módulo
+
+```bash
+# Levantar el Módulo Central + SQL Server
+docker compose -f docker-compose.central.yml up -d --build
+
+# Levantar el Módulo de Reportes + PostgreSQL + Nginx
+docker compose -f docker-compose.reportes.yml up -d --build
+
+# Levantar el Módulo de Búsqueda + MongoDB
+docker compose -f docker-compose.busqueda.yml up -d --build
+```
+
+> ⚠️ **Orden de levantamiento importante:** Primero `busqueda`, luego `reportes`, y finalmente `central` (ya que el central depende de que los otros módulos estén en la red).
+
+### Detener y limpiar
+
+```bash
+# Detener (conserva datos)
+docker compose -f docker-compose.central.yml down
+docker compose -f docker-compose.reportes.yml down
+docker compose -f docker-compose.busqueda.yml down
+
+# Detener y destruir volúmenes (borra bases de datos) ⚠️
+docker compose -f docker-compose.central.yml down -v
+docker compose -f docker-compose.reportes.yml down -v
+docker compose -f docker-compose.busqueda.yml down -v
+```
+
+### Monitoreo y logs
+
+```bash
+# Ver logs del módulo central
+docker logs app_central_dotnet --tail=100
+
+# Ver logs de SQL Server
+docker logs sigd_sqlserver --tail=100
+
+# Ver logs de PHP (Reportes)
+docker logs app_reportes_php --tail=100
+
+# Ver logs de Node.js (Búsqueda)
+docker logs app_busqueda_node --tail=100
+```
+
+### Acceder a consolas de bases de datos
+
+```bash
+# Consola SQL Server
+docker exec -it sigd_sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "TuPasswordSeguro123!" -C
+
+# Consola PostgreSQL
+docker exec -it sigd_postgres psql -U Super_Admin -d Postgres_SIGD
+
+# Consola MongoDB
+docker exec -it sigd_mongodb mongosh -u Super_Admin -p TuPasswordMongo! --authenticationDatabase admin
+```
+
+### Ejecutar tests
+
+```bash
+# Tests del Módulo Búsqueda (Jest)
+docker exec -it app_busqueda_node npm test
+
+# Tests del Módulo Reportes (PHPUnit)
+docker exec -it app_reportes_php ./vendor/bin/phpunit tests/
+```
+
+---
+
+## ❓ Solución de Problemas Comunes
+
+### "La empresa no ha sido validada"
+- **Causa:** Registraste una empresa pero no has hecho clic en el enlace de validación enviado a tu correo.
+- **Solución:** Revisa tu bandeja de entrada (y la carpeta de spam) buscando un correo de "SIGD Empresarial". Haz clic en el enlace "Validar mi cuenta".
+
+### "No me llega el correo de validación"
+- **Causa:** Las credenciales SMTP en `appsettings.json` no son correctas.
+- **Solución:** Verifica que estés usando una Contraseña de Aplicación si tu proveedor es Gmail. Revisa los logs con `docker logs app_central_dotnet --tail=50` para ver el error exacto.
+
+### Los datos de prueba no aparecen después de reiniciar
+- **Causa:** Los scripts `init_*.sql` y `seed_demo.*` solo se ejecutan cuando Docker crea el volumen por primera vez. Si ya existían datos, no se sobrescriben.
+- **Solución:** Usa el comando `clean` para destruir los volúmenes y volver a empezar:
+  ```powershell
+  .\start-sigd.ps1 clean
+  .\start-sigd.ps1 start
+  ```
+
+### Los usuarios/departamentos no aparecen en el Módulo de Reportes
+- **Causa:** La sincronización API entre módulos falló (posiblemente el módulo de reportes no estaba levantado cuando se creó el usuario).
+- **Solución:** Verifica que todos los módulos estén corriendo con `docker ps`. Si el problema persiste, haz un `clean` y vuelve a levantar para que los seeds regeneren todo.
+
+### Error de conexión a SQL Server
+- **Causa:** SQL Server puede tardar 20-30 segundos en estar listo después de iniciar. El módulo central espera un healthcheck pero en hardware lento puede no ser suficiente.
+- **Solución:** Reinicia solo el módulo central: `.\start-sigd.ps1 restart central` o `docker compose -f docker-compose.central.yml restart modulo_central`.
 
 ---
 
@@ -463,16 +715,22 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 - ✅ Implementar arquitectura de microservicios con tres módulos independientes
 - ✅ Integrar tres motores de base de datos distintos (SQL Server, PostgreSQL, MongoDB)
 - ✅ Implementar flujo de gestión documental completo con roles y permisos
+- ✅ Implementar soporte multi-empresa (multi-tenant) con aislamiento de datos
+- ✅ Validación de registro por correo electrónico vía SMTP
+- ✅ Versionado automático de documentos con lógica de aprobado/rechazado
+- ✅ Obsolescencia automática de versiones anteriores
+- ✅ Sincronización de tablas espejo entre SQL Server y PostgreSQL
 - ✅ Lograr comunicación REST entre servicios con API Keys
-- ✅ Containerizar la aplicación completa con Docker Compose
-- ✅ Implementar búsqueda full-text sobre documentos indexados
+- ✅ Containerizar la aplicación completa con Docker Compose (3 archivos independientes)
+- ✅ Implementar búsqueda full-text sobre documentos indexados en MongoDB
 - ✅ Generar reportes en PDF con dompdf
-- ✅ Cobertura de tests unitarios ≥ 80% en módulo de búsqueda
+- ✅ Script de administración multiplataforma (PowerShell + Bash)
+- ✅ Cobertura de tests unitarios en módulos de búsqueda y reportes
 
 ---
 
 <div align="center">
 
-
+**SIGD Empresarial** · v2.0.1 · © 2026
 
 </div>

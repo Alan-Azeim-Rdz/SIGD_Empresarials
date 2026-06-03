@@ -21,6 +21,8 @@ public partial class Empresa
 
     public string? CamposPersonalizados { get; set; }
 
+    public string? TokenValidacion { get; set; }
+
     // --- Campos de Auditoría ---
     public int? IdUsuarioCreacion { get; set; }
 

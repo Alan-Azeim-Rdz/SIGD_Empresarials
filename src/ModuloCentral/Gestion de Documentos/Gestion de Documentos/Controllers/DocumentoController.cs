@@ -13,12 +13,18 @@ namespace Gestion_de_Documentos.Controllers
         private readonly DirContext _context;
         private readonly IMongoGridFsService _gridFsService;
         private readonly BusquedaIntegrationService _busquedaService;
+        private readonly ReportesIntegrationService _reportesService;
 
-        public DocumentoController(DirContext context, IMongoGridFsService gridFsService, BusquedaIntegrationService busquedaService)
+        public DocumentoController(
+            DirContext context, 
+            IMongoGridFsService gridFsService, 
+            BusquedaIntegrationService busquedaService,
+            ReportesIntegrationService reportesService)
         {
             _context = context;
             _gridFsService = gridFsService;
             _busquedaService = busquedaService;
+            _reportesService = reportesService;
         }
 
         private int GetCurrentUserId()
@@ -237,7 +243,7 @@ namespace Gestion_de_Documentos.Controllers
         {
             var userId = GetCurrentUserId();
             var doc = await _context.Documentos
-                .Include(d => d.DocumentoVersions)
+                .Include(d => d.DocumentoVersions.Where(v => v.Estatus == true))
                 .FirstOrDefaultAsync(d => d.Id == id && d.IdUsuarioCreacion == userId && d.Estatus == true);
 
             if (doc == null || (doc.EstadoActual != "Borrador" && doc.EstadoActual != "Rechazado" && doc.EstadoActual != "Vigente"))
@@ -252,7 +258,7 @@ namespace Gestion_de_Documentos.Controllers
         {
             var userId = GetCurrentUserId();
             var doc = await _context.Documentos
-                .Include(d => d.DocumentoVersions)
+                .Include(d => d.DocumentoVersions.Where(v => v.Estatus == true))
                 .FirstOrDefaultAsync(d => d.Id == id && d.IdUsuarioCreacion == userId && d.Estatus == true);
 
             if (doc == null || (doc.EstadoActual != "Borrador" && doc.EstadoActual != "Rechazado" && doc.EstadoActual != "Vigente"))
@@ -351,7 +357,7 @@ namespace Gestion_de_Documentos.Controllers
             var doc = await _context.Documentos
                 .Include(d => d.IdDepartamentoNavigation)
                 .Include(d => d.IdTipoDocumentoNavigation)
-                .Include(d => d.DocumentoVersions)
+                .Include(d => d.DocumentoVersions.Where(v => v.Estatus == true))
                     .ThenInclude(v => v.FlujoAprobacions)
                         .ThenInclude(f => f.IdUsuarioAsignadoNavigation)
                 .FirstOrDefaultAsync(d => d.Id == id && d.IdEmpresa == empresaId && d.Estatus == true);
@@ -391,7 +397,7 @@ namespace Gestion_de_Documentos.Controllers
             var doc = await _context.Documentos
                 .Include(d => d.IdDepartamentoNavigation)
                 .Include(d => d.IdTipoDocumentoNavigation)
-                .Include(d => d.DocumentoVersions)
+                .Include(d => d.DocumentoVersions.Where(v => v.Estatus == true))
                     .ThenInclude(v => v.FlujoAprobacions)
                         .ThenInclude(f => f.IdUsuarioAsignadoNavigation)
                 .FirstOrDefaultAsync(d => d.Id == id && d.IdEmpresa == empresaId && d.Estatus == true);
@@ -569,6 +575,150 @@ namespace Gestion_de_Documentos.Controllers
             catch (Exception)
             {
                 return NotFound("No se pudo recuperar el archivo desde MongoDB GridFS.");
+            }
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EliminarDocumento(int id)
+        {
+            var userId = GetCurrentUserId();
+            var esAdmin = User.IsInRole("Administrador") || User.IsInRole("Super Administrador");
+            
+            var doc = await _context.Documentos
+                .Include(d => d.DocumentoVersions)
+                .FirstOrDefaultAsync(d => d.Id == id && d.Estatus == true);
+
+            if (doc == null) return NotFound();
+
+            if (doc.IdUsuarioCreacion != userId && !esAdmin)
+                return RedirectToAction("AccesoDenegado", "Auth");
+
+            // Validar si ha sido aprobado previamente (para no permitir eliminar si ya fue aprobado)
+            bool aprobadoPrevio = doc.EstadoActual == "Vigente" || 
+                                  doc.DocumentoVersions.Any(v => v.VersionMinor == 0 && v.NumeroVersion > 0 && v.Estatus == true);
+
+            if (aprobadoPrevio)
+            {
+                return BadRequest("No se puede eliminar un documento que ha sido aprobado previamente. Debe marcarse como Obsoleto.");
+            }
+
+            // Borrado lógico del documento
+            doc.Estatus = false;
+            doc.EstadoActual = "Eliminado";
+            doc.FechaModificacion = DateTime.Now;
+            doc.IdUsuarioModificacion = userId;
+
+            // Borrado lógico de todas sus versiones
+            foreach (var v in doc.DocumentoVersions)
+            {
+                v.Estatus = false;
+                v.FechaModificacion = DateTime.Now;
+                v.IdUsuarioModificacion = userId;
+            }
+
+            await _context.SaveChangesAsync();
+
+            // Desindexar de búsqueda y reportes
+            await _busquedaService.DesindexarDocumentoAsync(doc.Id);
+            await _reportesService.EliminarDocumentoAsync(doc.Id);
+
+            TempData["Exito"] = $"El borrador del documento '{doc.Titulo}' ha sido eliminado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+
+        public async Task<IActionResult> EliminarVersion(int versionId)
+        {
+            var userId = GetCurrentUserId();
+            var esAdmin = User.IsInRole("Administrador") || User.IsInRole("Super Administrador");
+
+            var version = await _context.DocumentoVersions
+                .Include(v => v.IdDocumentoNavigation)
+                .FirstOrDefaultAsync(v => v.Id == versionId && v.Estatus == true);
+
+            if (version == null) return NotFound();
+
+            var doc = version.IdDocumentoNavigation;
+            if (doc == null || doc.Estatus == false) return NotFound();
+
+            if (doc.IdUsuarioCreacion != userId && !esAdmin)
+                return RedirectToAction("AccesoDenegado", "Auth");
+
+            // Soft-delete de la versión
+            version.Estatus = false;
+            version.FechaModificacion = DateTime.Now;
+            version.IdUsuarioModificacion = userId;
+
+            // Obtener las versiones activas restantes de este documento
+            var allActiveVersions = await _context.DocumentoVersions
+                .Where(v => v.IdDocumento == doc.Id && v.Estatus == true && v.Id != version.Id)
+                .OrderByDescending(v => v.NumeroVersion)
+                .ThenByDescending(v => v.VersionMinor)
+                .ToListAsync();
+
+            var isMostRecent = !allActiveVersions.Any() || 
+                               version.NumeroVersion > allActiveVersions[0].NumeroVersion ||
+                               (version.NumeroVersion == allActiveVersions[0].NumeroVersion && version.VersionMinor > allActiveVersions[0].VersionMinor);
+
+            if (isMostRecent)
+            {
+                if (!allActiveVersions.Any())
+                {
+                    // No hay versiones activas, borrar el documento
+                    doc.Estatus = false;
+                    doc.EstadoActual = "Eliminado";
+                    doc.FechaModificacion = DateTime.Now;
+                    doc.IdUsuarioModificacion = userId;
+                    
+                    await _context.SaveChangesAsync();
+                    
+                    await _busquedaService.DesindexarDocumentoAsync(doc.Id);
+                    await _reportesService.EliminarDocumentoAsync(doc.Id);
+                }
+                else
+                {
+                    var newLatest = allActiveVersions[0];
+                    if (newLatest.VersionMinor == 0 && newLatest.NumeroVersion > 0)
+                    {
+                        doc.EstadoActual = "Vigente";
+                        doc.FechaModificacion = DateTime.Now;
+                        doc.IdUsuarioModificacion = userId;
+                        
+                        await _context.SaveChangesAsync();
+                        
+                        // Sincronizar la versión aprobada en búsqueda y reportes
+                        await _busquedaService.SincronizarDocumentoAsync(doc.Id, userId);
+                        await _reportesService.SincronizarDocumentoAsync(doc.Id, userId);
+                    }
+                    else
+                    {
+                        doc.EstadoActual = "Borrador";
+                        doc.FechaModificacion = DateTime.Now;
+                        doc.IdUsuarioModificacion = userId;
+                        
+                        await _context.SaveChangesAsync();
+                        
+                        // Desindexar de búsqueda y reportes ya que ahora es Borrador
+                        await _busquedaService.DesindexarDocumentoAsync(doc.Id);
+                        await _reportesService.EliminarDocumentoAsync(doc.Id);
+                    }
+                }
+            }
+            else
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            if (doc.Estatus == false)
+            {
+                TempData["Exito"] = "La versión ha sido eliminada. El documento ha sido eliminado al no quedar más versiones.";
+                return RedirectToAction(nameof(Index));
+            }
+            else
+            {
+                TempData["Exito"] = "La versión ha sido eliminada correctamente.";
+                return RedirectToAction(nameof(Historial), new { id = doc.Id });
             }
         }
 

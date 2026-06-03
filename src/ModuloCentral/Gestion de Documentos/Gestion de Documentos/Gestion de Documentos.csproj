@@ -28,4 +28,10 @@
     <PackageReference Include="MongoDB.Driver" Version="3.8.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Remove="Views\Auth\Login.cshtml" />
+    <None Remove="Views\Auth\Login.cshtml" />
+    <Compile Remove="Views\Auth\Login.cshtml" />
+  </ItemGroup>
+
 </Project>
