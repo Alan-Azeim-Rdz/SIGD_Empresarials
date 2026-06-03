@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════
 // MÓDULO DE BÚSQUEDA — Node.js + TypeScript + MongoDB
 // Proyecto: SIGD Empresarial
-// Autor: Josue J.A.V.
 // ═══════════════════════════════════════════════════════
 
 import express, { Request, Response } from 'express';
