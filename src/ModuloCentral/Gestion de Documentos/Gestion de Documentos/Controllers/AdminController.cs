@@ -33,7 +33,6 @@ namespace Gestion_de_Documentos.Controllers
             return int.TryParse(claim, out var empId) ? empId : 0;
         }
 
-        #region PANEL PRINCIPAL
         public IActionResult Index()
         {
             var empresaId = GetCurrentUserEmpresaId();
@@ -63,9 +62,6 @@ namespace Gestion_de_Documentos.Controllers
             }
             return RedirectToAction(nameof(Index));
         }
-        #endregion
-
-        #region DEPARTAMENTOS
         public async Task<IActionResult> Departamentos()
         {
             var empresaId = GetCurrentUserEmpresaId();
@@ -168,12 +164,8 @@ namespace Gestion_de_Documentos.Controllers
             }
             return RedirectToAction("Departamentos");
         }
-        #endregion
-
-        #region ROLES
         public async Task<IActionResult> Roles()
         {
-            // Mostrar solo roles activos, excluir roles de sistema restringidos
             var roles = await _context.Rols
                 .Where(r => r.Estatus == true
                          && r.Nombre != "Super Administrador")
@@ -258,7 +250,6 @@ namespace Gestion_de_Documentos.Controllers
             return View(rol);
         }
 
-        // Roles que no pueden eliminarse (sistema)
         private static readonly HashSet<string> RolesSistema = new(StringComparer.OrdinalIgnoreCase)
         {
             "Administrador", "Auditor", "Usuario", "Super Administrador", "Superior"
@@ -283,9 +274,6 @@ namespace Gestion_de_Documentos.Controllers
             }
             return RedirectToAction("Roles");
         }
-        #endregion
-
-        #region PERMISOS
         public async Task<IActionResult> Permisos()
         {
             var permisos = await _context.Permisos
@@ -372,9 +360,6 @@ namespace Gestion_de_Documentos.Controllers
             }
             return RedirectToAction("Permisos");
         }
-        #endregion
-
-        #region TIPOS DE DOCUMENTO
         public async Task<IActionResult> TiposDocumento()
         {
             var empresaId = GetCurrentUserEmpresaId();
@@ -477,9 +462,6 @@ namespace Gestion_de_Documentos.Controllers
             }
             return RedirectToAction("TiposDocumento");
         }
-        #endregion
-
-        #region GESTIÓN DE ROLES PARA USUARIOS
         public async Task<IActionResult> AsignarRolesUsuario(int id)
         {
             var empresaId = GetCurrentUserEmpresaId();
@@ -519,7 +501,6 @@ namespace Gestion_de_Documentos.Controllers
             if (usuario == null)
                 return NotFound();
 
-            // Eliminar roles anteriores
             var rolesActuales = usuario.UsuarioRolIdUsuarioNavigations.Where(ur => ur.Estatus == true).ToList();
             foreach (var rol in rolesActuales)
             {
@@ -528,7 +509,6 @@ namespace Gestion_de_Documentos.Controllers
                 rol.IdUsuarioEliminacion = GetCurrentUserId();
             }
 
-            // Agregar nuevos roles
             if (rolesSeleccionados != null && rolesSeleccionados.Count > 0)
             {
                 foreach (var idRol in rolesSeleccionados)
@@ -549,9 +529,6 @@ namespace Gestion_de_Documentos.Controllers
             await _context.SaveChangesAsync();
             return RedirectToAction("Usuarios", "Auth");
         }
-        #endregion
-
-        #region GESTIÓN DE PERMISOS PARA ROLES
         public async Task<IActionResult> AsignarPermisosRol(int id)
         {
             var rol = await _context.Rols
@@ -589,7 +566,6 @@ namespace Gestion_de_Documentos.Controllers
             if (rol == null)
                 return NotFound();
 
-            // Eliminar permisos anteriores
             var permisosActuales = rol.RolPermisos.Where(rp => rp.Estatus == true).ToList();
             foreach (var permiso in permisosActuales)
             {
@@ -598,7 +574,6 @@ namespace Gestion_de_Documentos.Controllers
                 permiso.IdUsuarioEliminacion = GetCurrentUserId();
             }
 
-            // Agregar nuevos permisos
             if (permisosSeleccionados != null && permisosSeleccionados.Count > 0)
             {
                 foreach (var idPermiso in permisosSeleccionados)
@@ -618,9 +593,6 @@ namespace Gestion_de_Documentos.Controllers
             await _context.SaveChangesAsync();
             return RedirectToAction("Roles");
         }
-        #endregion
-
-        #region CAMPOS PERSONALIZADOS
         [HttpGet]
         public async Task<IActionResult> CamposPersonalizados()
         {
@@ -641,13 +613,11 @@ namespace Gestion_de_Documentos.Controllers
             if (empresa == null)
                 return NotFound("Empresa no encontrada.");
 
-            // Validar que sea JSON válido o esté vacío
             if (!string.IsNullOrEmpty(camposJson))
             {
                 try
                 {
                     using var doc = System.Text.Json.JsonDocument.Parse(camposJson);
-                    // Validar estructura básica: debe ser un arreglo de objetos
                     if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                     {
                         ModelState.AddModelError("", "La estructura de los campos debe ser un arreglo JSON.");
@@ -679,10 +649,8 @@ namespace Gestion_de_Documentos.Controllers
             TempData["SuccessMessage"] = "Campos personalizados actualizados con éxito.";
             return RedirectToAction("CamposPersonalizados");
         }
-        #endregion
     }
 
-    // ViewModels
     public class AdminDashboardViewModel
     {
         public int TotalUsuarios { get; set; }

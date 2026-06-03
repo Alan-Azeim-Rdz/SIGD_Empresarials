@@ -36,18 +36,12 @@ namespace Gestion_de_Documentos.Services
             _httpClient     = httpClient;
             _context        = context;
             _logger         = logger;
-            // Las URLs se leen de appsettings.json / variables de entorno Docker
             _reportesBaseUrl = configuration["ReportesModule:BaseUrl"]
                                ?? "http://modulo_reportes";
             _syncApiKey      = configuration["ReportesModule:SyncApiKey"]
                                ?? "sigd_sync_secret_2026";
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // SINCRONIZACIÓN DE UN DOCUMENTO INDIVIDUAL
-        // Llamado desde AdminController (o cualquier controlador futuro) tras
-        // publicar o actualizar la versión vigente de un documento.
-        // ─────────────────────────────────────────────────────────────────────
 
         /// <summary>
         /// Publica los metadatos de un documento en el Módulo de Reportes.
@@ -58,7 +52,6 @@ namespace Gestion_de_Documentos.Services
         /// <param name="idUsuarioCreacion">ID del usuario que disparó la acción.</param>
         public async Task SincronizarDocumentoAsync(int idDocumento, int idUsuarioCreacion)
         {
-            // Construir el payload leyendo el documento y su versión más reciente
             var payload = await ConstruirPayloadAsync(idDocumento, idUsuarioCreacion);
             if (payload is null)
             {

@@ -79,8 +79,8 @@ El sistema está compuesto por **tres módulos independientes** que se comunican
 
 | Origen | Destino | Endpoint | Propósito |
 |--------|---------|----------|-----------|
-| Módulo Central | Módulo Búsqueda | `POST /indexar` | Indexar documento al publicarlo |
-| Módulo Central | Módulo Búsqueda | `GET /buscar?q=` | Búsqueda full-text desde la UI |
+| Módulo Central | Módulo Búsqueda | `POST /index` | Indexar documento al publicarlo |
+| Módulo Central | Módulo Búsqueda | `GET /searhc?q=` | Búsqueda full-text desde la UI |
 | Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_documento` | Sincronizar documentos vigentes |
 | Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_usuario` | Sincronizar tabla espejo de usuarios |
 | Módulo Central | Módulo Reportes | `POST /api/sync.php?action=sincronizar_departamento` | Sincronizar tabla espejo de departamentos |
@@ -553,7 +553,7 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 | 📢 **Vigente** | Publicado como normativa activa (versión termina en `.0`) | Admin (para publicar) |
 | 📦 **Obsoleto** | Reemplazado automáticamente por una versión más nueva | Sistema automático |
 
-> Cuando un documento pasa a **Vigente**, el Módulo Central notifica automáticamente al Módulo de Búsqueda (`POST /indexar`) para indexarlo y hacerlo buscable, y al Módulo de Reportes (`POST /api/sync.php`) para actualizar las tablas espejo.
+> Cuando un documento pasa a **Vigente**, el Módulo Central notifica automáticamente al Módulo de Búsqueda (`POST /index`) para indexarlo y hacerlo buscable, y al Módulo de Reportes (`POST /api/sync.php`) para actualizar las tablas espejo.
 
 ---
 
@@ -591,8 +591,8 @@ El ciclo de vida completo de un documento en SIGD sigue estos estados:
 
 | Ruta | Método | Descripción |
 |------|--------|-------------|
-| `/buscar?q={texto}` | `GET` | Búsqueda full-text (máx. 100 caracteres) |
-| `/indexar` | `POST` | Indexar un nuevo documento |
+| `/search?q={texto}` | `GET` | Búsqueda full-text (máx. 100 caracteres) |
+| `/index` | `POST` | Indexar un nuevo documento |
 | `/documento/:id` | `GET` | Obtener metadatos por ID o código |
 | `/docs` | `GET` | Swagger UI interactivo |
 | `/docs.json` | `GET` | Especificación OpenAPI 3.0 |

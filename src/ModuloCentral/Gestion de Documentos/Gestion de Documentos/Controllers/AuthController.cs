@@ -1,41 +1,36 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using System.Security.Claims;
-using Gestion_de_Documentos.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using System;
+using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using System.ComponentModel.DataAnnotations;
+using Gestion_de_Documentos.Models;
+using Gestion_de_Documentos.Services;
 
 namespace Gestion_de_Documentos.Controllers
 {
     public class AuthController : Controller
     {
         private readonly DirContext _context;
-        private readonly Gestion_de_Documentos.Services.ReportesIntegrationService _reportesService;
-        private readonly Gestion_de_Documentos.Services.IEmailService _emailService;
+        private readonly ReportesIntegrationService _reportesService;
+        private readonly IEmailService _emailService;
 
         public AuthController(
             DirContext context,
-            Gestion_de_Documentos.Services.ReportesIntegrationService reportesService,
-            Gestion_de_Documentos.Services.IEmailService emailService)
+            ReportesIntegrationService reportesService,
+            IEmailService emailService)
         {
             _context = context;
             _reportesService = reportesService;
             _emailService = emailService;
         }
 
-        // --- LOGIN ---
         [HttpGet]
         public IActionResult Login()
         {
-            // Si ya está logueado, lo mandamos al inicio
             if (User.Identity.IsAuthenticated) return RedirectToAction("Index", "Home");
             return View("Login_fixed");
         }
@@ -43,59 +38,51 @@ namespace Gestion_de_Documentos.Controllers
         [HttpPost]
         public async Task<IActionResult> Login(string username, string contrasena, bool recordarme = false)
         {
-            // 1 y 2. Buscamos al usuario y sus roles en una sola consulta optimizada, 
-            // usando la propiedad de navegación que el Scaffold mapeó correctamente: UsuarioRolIdUsuarioNavigations
-            var usuario = await _context.Usuarios
+            var user = await _context.Usuarios
                 .Include(u => u.UsuarioRolIdUsuarioNavigations.Where(ur => ur.Estatus == true))
                     .ThenInclude(ur => ur.IdRolNavigation)
                 .FirstOrDefaultAsync(u => u.Correo == username && u.Estatus == true);
 
-            var hashContrasena = HashPassword(contrasena);
+            var passwordHash = HashPassword(contrasena);
 
-            if (usuario != null && string.Equals(usuario.Contrasena.Trim(), hashContrasena.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (user != null && string.Equals(user.Contrasena.Trim(), passwordHash.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                // Verificar estatus de la empresa antes de iniciar sesión
-                if (usuario.IdEmpresa.HasValue)
+
+                if (user.IdEmpresa.HasValue)
                 {
-                    var empresa = await _context.Empresas.FirstOrDefaultAsync(e => e.Id == usuario.IdEmpresa.Value);
-                    if (empresa != null && empresa.Estatus == false)
+                    var company = await _context.Empresas.FirstOrDefaultAsync(e => e.Id == user.IdEmpresa.Value);
+                    if (company != null && company.Estatus == false)
                     {
                         ViewBag.Error = "La empresa no ha sido validada. Por favor, revisa tu correo electrónico para activarla.";
                         return View("Login_fixed");
                     }
                 }
 
-                var claims = new List<System.Security.Claims.Claim>
+                var claims = new List<Claim>
                 {
-                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, usuario.Id.ToString()),
-                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, usuario.Correo),
-                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.GivenName, usuario.Nombre),
+                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                    new Claim(ClaimTypes.Name, user.Correo),
+                    new Claim(ClaimTypes.GivenName, user.Nombre),
                 };
 
-                if (usuario.IdEmpresa.HasValue)
+                if (user.IdEmpresa.HasValue)
                 {
-                    claims.Add(new System.Security.Claims.Claim("IdEmpresa", usuario.IdEmpresa.Value.ToString()));
+                    claims.Add(new Claim("IdEmpresa", user.IdEmpresa.Value.ToString()));
                 }
 
-                // Agregar roles desde la base de datos usando la propiedad mapeada
-                var rolesActivos = usuario.UsuarioRolIdUsuarioNavigations != null
-                    ? usuario.UsuarioRolIdUsuarioNavigations
-                        .Select(ur => ur.IdRolNavigation?.Nombre)
-                        .Where(r => !string.IsNullOrEmpty(r))
-                        .ToList()
-                    : new List<string>();
+                var activeRoles = user.UsuarioRolIdUsuarioNavigations
+                    ?.Select(ur => ur.IdRolNavigation?.Nombre)
+                    .Where(r => !string.IsNullOrEmpty(r))
+                    .ToList() ?? new List<string>();
 
-                if (rolesActivos.Any())
+                if (activeRoles.Any())
                 {
-                    foreach (var rol in rolesActivos)
-                    {
-                        claims.Add(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, rol));
-                    }
+                    foreach (var rol in activeRoles)
+                        claims.Add(new Claim(ClaimTypes.Role, rol));
                 }
                 else
                 {
-                    // Si no tiene roles asignados, asignar rol por defecto
-                    claims.Add(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Usuario"));
+                    claims.Add(new Claim(ClaimTypes.Role, "Usuario"));
                 }
 
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -112,54 +99,24 @@ namespace Gestion_de_Documentos.Controllers
 
                 await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
 
-                // --- REGISTRAR BITACORA DE ACCESO ---
                 try
                 {
-                    var ip = GetClientIpAddress();
-
-                    var bitacora = new BitacoraAcceso
-                    {
-                        IdUsuario = usuario.Id,
-                        FechaHoraIntento = DateTime.Now,
-                        DireccionIp = ip,
-                        EstadoIntento = "EXITOSO",
-                        Estatus = true,
-                        IdUsuarioCreacion = usuario.Id
-                    };
-                    _context.BitacoraAccesos.Add(bitacora);
+                    RegistrarBitacora(user.Id, "EXITOSO");
                     await _context.SaveChangesAsync();
                 }
-                catch (Exception)
-                {
-                    // Evitar que un error de auditoría interrumpa el inicio de sesión
-                }
+                catch { }
 
                 return RedirectToAction("Index", "Home");
             }
 
-            // Si el usuario existe pero la contraseña falló, registramos el intento fallido
-            if (usuario != null)
+            if (user != null)
             {
                 try
                 {
-                    var ip = GetClientIpAddress();
-
-                    var bitacora = new BitacoraAcceso
-                    {
-                        IdUsuario = usuario.Id,
-                        FechaHoraIntento = DateTime.Now,
-                        DireccionIp = ip,
-                        EstadoIntento = "FALLIDO",
-                        Estatus = true,
-                        IdUsuarioCreacion = usuario.Id
-                    };
-                    _context.BitacoraAccesos.Add(bitacora);
+                    RegistrarBitacora(user.Id, "FALLIDO");
                     await _context.SaveChangesAsync();
                 }
-                catch (Exception)
-                {
-                    // Evitar que un error de auditoría interrumpa la respuesta del controlador
-                }
+                catch { }
             }
 
             ViewBag.Error = "Credenciales incorrectas. Verifica tu contraseña, o asegúrate de haber validado tu cuenta y correo electrónico.";
@@ -181,12 +138,11 @@ namespace Gestion_de_Documentos.Controllers
 
         [HttpPost]
         [Authorize(Roles = "Administrador,Superior")]
-        public async Task<IActionResult> Registro(Usuario nuevoUsuario, int idRol)
+        public async Task<IActionResult> Registro(Usuario newUser, int roleId)
         {
-            var empresaId = int.TryParse(User.FindFirst("IdEmpresa")?.Value, out var empId) ? empId : 0;
+            var companyId = int.TryParse(User.FindFirst("IdEmpresa")?.Value, out var empId) ? empId : 0;
 
-            // Remover propiedades de navegación y campos que el controlador asigna
-            // para evitar errores falsos de ModelState
+            // Evitar errores de ModelState en propiedades de navegación asignadas por el controlador
             ModelState.Remove("IdDepartamentoNavigation");
             ModelState.Remove("IdEmpresaNavigation");
             ModelState.Remove("IdUsuarioCreacionNavigation");
@@ -199,94 +155,93 @@ namespace Gestion_de_Documentos.Controllers
 
             if (ModelState.IsValid)
             {
-                bool existe = await _context.Usuarios.AnyAsync(u => u.Correo == nuevoUsuario.Correo);
-                if (existe)
+                bool exists = await _context.Usuarios.AnyAsync(u => u.Correo == newUser.Correo);
+                if (exists)
                 {
                     ViewBag.Error = "Este correo electrónico ya está registrado.";
-                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
                     ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
-                    return View(nuevoUsuario);
+                    return View(newUser);
                 }
 
-                var departamentoExiste = await _context.Departamentos.AnyAsync(d => d.Id == nuevoUsuario.IdDepartamento && d.Estatus == true && d.IdEmpresa == empresaId);
-                if (!departamentoExiste)
+                var departmentExists = await _context.Departamentos.AnyAsync(d => d.Id == newUser.IdDepartamento && d.Estatus == true && d.IdEmpresa == companyId);
+                if (!departmentExists)
                 {
                     ViewBag.Error = "El departamento seleccionado no es válido.";
-                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
                     ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
-                    return View(nuevoUsuario);
+                    return View(newUser);
                 }
 
-                var rolExiste = await _context.Rols.AnyAsync(r => r.Id == idRol && r.Estatus == true);
-                if (!rolExiste)
+                var roleExists = await _context.Rols.AnyAsync(r => r.Id == roleId && r.Estatus == true);
+                if (!roleExists)
                 {
                     ViewBag.Error = "El rol seleccionado no es válido.";
-                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+                    ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
                     ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
-                    return View(nuevoUsuario);
+                    return View(newUser);
                 }
 
-                nuevoUsuario.Estatus = true;
-                nuevoUsuario.FechaCreacion = DateTime.Now;
-                nuevoUsuario.IdUsuarioCreacion = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
-                nuevoUsuario.IdEmpresa = empresaId;
+                newUser.Estatus = true;
+                newUser.FechaCreacion = DateTime.Now;
+                newUser.IdUsuarioCreacion = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
+                newUser.IdEmpresa = companyId;
 
-                nuevoUsuario.Contrasena = HashPassword(nuevoUsuario.Contrasena);
+                newUser.Contrasena = HashPassword(newUser.Contrasena);
 
                 using (var transaction = await _context.Database.BeginTransactionAsync())
                 {
                     try
                     {
-                        _context.Usuarios.Add(nuevoUsuario);
+                        _context.Usuarios.Add(newUser);
                         await _context.SaveChangesAsync();
 
-                        var usuarioRol = new UsuarioRol
+                        var userRole = new UsuarioRol
                         {
-                            IdUsuario = nuevoUsuario.Id,
-                            IdRol = idRol,
+                            IdUsuario = newUser.Id,
+                            IdRol = roleId,
                             FechaAsignacion = DateTime.Now,
                             FechaCreacion = DateTime.Now,
                             Estatus = true,
-                            IdUsuarioCreacion = nuevoUsuario.IdUsuarioCreacion
+                            IdUsuarioCreacion = newUser.IdUsuarioCreacion
                         };
-                        _context.UsuarioRols.Add(usuarioRol);
+                        _context.UsuarioRols.Add(userRole);
                         await _context.SaveChangesAsync();
 
                         await transaction.CommitAsync();
 
                         // Sincronizar usuario espejo en módulo de reportes
-                        await _reportesService.SincronizarUsuarioAsync(nuevoUsuario.Id);
+                        await _reportesService.SincronizarUsuarioAsync(newUser.Id);
                     }
                     catch (Exception ex)
                     {
                         await transaction.RollbackAsync();
                         ViewBag.Error = "Ocurrió un error al registrar el usuario y su rol: " + ex.Message;
-                        ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+                        ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
                         ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
-                        return View(nuevoUsuario);
+                        return View(newUser);
                     }
                 }
 
                 ViewBag.Exito = "Usuario creado exitosamente. Deberá cambiar su contraseña en el primer acceso.";
                 ModelState.Clear();
-                ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+                ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
                 ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
                 return View(new Usuario()); // Limpia el formulario
             }
 
-            // Debug: mostrar errores de ModelState en el ViewBag si hay problemas
-            var errores = ModelState.Where(x => x.Value.Errors.Count > 0)
+            // Debug: ModelState errors
+            var errors = ModelState.Where(x => x.Value.Errors.Count > 0)
                 .ToDictionary(k => k.Key, v => v.Value.Errors.Select(e => e.ErrorMessage).ToList());
-            if (errores.Any())
+            if (errors.Any())
             {
-                ViewBag.Error = "Datos inválidos: " + string.Join("; ", errores.SelectMany(e => e.Value));
+                ViewBag.Error = "Datos inválidos: " + string.Join("; ", errors.SelectMany(e => e.Value));
             }
 
-            ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == empresaId).ToList();
+            ViewBag.Departamentos = _context.Departamentos.Where(d => d.Estatus == true && d.IdEmpresa == companyId).ToList();
             ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true).ToListAsync();
-            return View(nuevoUsuario);
+            return View(newUser);
         }
-        // --- GESTIÓN DE USUARIOS (Protegido por Rol) ---
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> Usuarios()
         {
@@ -301,7 +256,6 @@ namespace Gestion_de_Documentos.Controllers
             return View(usuarios);
         }
 
-        // --- EDITAR USUARIO ---
         [HttpGet]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> EditarUsuario(int id)
@@ -420,7 +374,6 @@ namespace Gestion_de_Documentos.Controllers
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
-                    // Sincronizar usuario espejo en módulo de reportes
                     await _reportesService.SincronizarUsuarioAsync(usuario.Id);
                 }
                 catch (Exception ex)
@@ -438,7 +391,6 @@ namespace Gestion_de_Documentos.Controllers
             return RedirectToAction("Usuarios");
         }
 
-        // --- ELIMINAR USUARIO (Soft Delete) ---
         [HttpPost]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> EliminarUsuario(int id)
@@ -452,7 +404,6 @@ namespace Gestion_de_Documentos.Controllers
                 usuario.IdUsuarioEliminacion = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
                 await _context.SaveChangesAsync();
 
-                // Sincronizar usuario espejo en módulo de reportes
                 await _reportesService.SincronizarUsuarioAsync(usuario.Id);
 
                 TempData["Exito"] = $"Usuario '{usuario.Nombre} {usuario.ApellidoP}' eliminado correctamente.";
@@ -460,7 +411,6 @@ namespace Gestion_de_Documentos.Controllers
             return RedirectToAction("Usuarios");
         }
 
-        // --- VER USUARIOS ELIMINADOS (Borrado Lógico) ---
         [HttpGet]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> UsuariosEliminados()
@@ -476,7 +426,6 @@ namespace Gestion_de_Documentos.Controllers
             return View(usuarios);
         }
 
-        // --- REACTIVAR USUARIO ---
         [HttpPost]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> ReactivarUsuario(int id)
@@ -500,14 +449,12 @@ namespace Gestion_de_Documentos.Controllers
             return RedirectToAction("Usuarios");
         }
 
-        // --- LOGOUT ---
         public async Task<IActionResult> Logout()
         {
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Login");
         }
 
-        // --- VALIDAR REGISTRO ---
         [HttpGet]
         public async Task<IActionResult> ValidarRegistro(string token)
         {
@@ -526,7 +473,7 @@ namespace Gestion_de_Documentos.Controllers
             }
 
             empresa.Estatus = true;
-            empresa.TokenValidacion = null; // Invalida el token
+            empresa.TokenValidacion = null;
 
             await _context.SaveChangesAsync();
 
@@ -546,7 +493,6 @@ namespace Gestion_de_Documentos.Controllers
             }
             catch (Exception ex)
             {
-                // Solo loguear el error, no queremos romper el flujo si el módulo de reportes falla temporalmente
                 Console.WriteLine($"Error al sincronizar con Reportes: {ex.Message}");
             }
 
@@ -554,53 +500,51 @@ namespace Gestion_de_Documentos.Controllers
             return View();
         }
 
-        // --- MANEJO DE ERRORES ---
         public IActionResult AccesoDenegado()
         {
             return View();
         }
 
-        // --- HASHEAR CONTRASEÑA ---
         private string HashPassword(string password)
         {
             if (string.IsNullOrEmpty(password)) return string.Empty;
-            using (var sha256 = SHA256.Create())
-            {
-                // NOTA: Usamos Encoding.Unicode (UTF-16LE) para coincidir con
-                // HASHBYTES('SHA2_256', N'...') en SQL Server (que usa NVARCHAR)
-                var bytes = sha256.ComputeHash(Encoding.Unicode.GetBytes(password));
-                var builder = new StringBuilder();
-                foreach (var b in bytes)
-                {
-                    builder.Append(b.ToString("X2"));
-                }
-                return builder.ToString();
-            }
+            using var sha256 = SHA256.Create();
+            // UTF-16LE para coincidir con HASHBYTES('SHA2_256', N'...') en SQL Server
+            var bytes = sha256.ComputeHash(Encoding.Unicode.GetBytes(password));
+            var builder = new StringBuilder();
+            foreach (var b in bytes)
+                builder.Append(b.ToString("X2"));
+            return builder.ToString();
         }
 
-        // --- OBTENER IP DEL CLIENTE ---
+        private void RegistrarBitacora(int idUsuario, string estado)
+        {
+            _context.BitacoraAccesos.Add(new BitacoraAcceso
+            {
+                IdUsuario = idUsuario,
+                FechaHoraIntento = DateTime.Now,
+                DireccionIp = GetClientIpAddress(),
+                EstadoIntento = estado,
+                Estatus = true,
+                IdUsuarioCreacion = idUsuario
+            });
+        }
+
         private string GetClientIpAddress()
         {
             var ip = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
             if (string.IsNullOrEmpty(ip))
-            {
                 ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-            }
             else
-            {
-                // X-Forwarded-For puede contener múltiples IPs separadas por coma
                 ip = ip.Split(',').FirstOrDefault()?.Trim();
-            }
 
             if (ip == "::1") ip = "127.0.0.1";
             if (!string.IsNullOrEmpty(ip) && ip.StartsWith("::ffff:"))
-            {
                 ip = ip.Substring(7);
-            }
+
             return ip ?? "127.0.0.1";
         }
 
-        // --- REGISTRO DE EMPRESA (PÚBLICO) ---
         [HttpGet]
         public IActionResult RegistroEmpresa()
         {
@@ -748,20 +692,15 @@ namespace Gestion_de_Documentos.Controllers
         private async Task<string> GenerateUniqueSlugAsync(string name)
         {
             if (string.IsNullOrEmpty(name)) return "empresa";
-            
-            // Normalizar a FormD para separar los caracteres base de sus acentos/diacríticos
+
             string normalized = name.Normalize(NormalizationForm.FormD);
             var sb = new StringBuilder();
             foreach (char c in normalized)
             {
-                var uc = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-                // Filtrar los caracteres que son acentos/diacríticos
-                if (uc != System.Globalization.UnicodeCategory.NonSpacingMark)
-                {
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
                     sb.Append(c);
-                }
             }
-            // Volver a normalizar a FormC y pasar a minúsculas
+
             string slug = sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
             
             slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\s-]", "");
