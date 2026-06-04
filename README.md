@@ -12,7 +12,7 @@
 
 **Proyecto universitario · Ingeniería en Informática**
 
-[🔗 Repositorio](https://github.com/Alan-Azeim-Rdz/SIGD_Empresarial) · [📖 Módulo Central](src/ModuloCentral/Gestion%20de%20Documentos/README.md) · [🔍 Módulo Búsqueda](src/ModuloBusqueda/README.md)
+[🔗 Repositorio](https://github.com/Alan-Azeim-Rdz/SIGD_Empresarials) · [📖 Módulo Central](src/ModuloCentral/Gestion%20de%20Documentos/README.md) · [🔍 Módulo Búsqueda](src/ModuloBusqueda/README.md)
 
 </div>
 
@@ -140,9 +140,8 @@ Antes de levantar el proyecto asegúrate de tener instalado:
 ### Paso 1 — Clonar el repositorio
 
 ```bash
-git clone https://github.com/Alan-Azeim-Rdz/SIGD_Empresarial.git
-cd SIGD_Empresarial
-git checkout development
+git clone https://github.com/Alan-Azeim-Rdz/SIGD_Empresarials.git
+cd SIGD_Empresarials
 ```
 
 ### Paso 2 — Configurar variables de entorno
@@ -233,6 +232,66 @@ El script se encarga automáticamente de:
 2. ✅ Levantar primero las bases de datos (Búsqueda y Reportes) y luego el Módulo Central.
 3. ✅ Construir las imágenes con `--build` en cada inicio.
 4. ✅ Ejecutar los scripts de inicialización de cada base de datos (tablas, seed data).
+
+### 🐧 Despliegue en Servidor Linux (Ubuntu/Debian)
+
+Si estás desplegando en un servidor Linux (como Ubuntu Server 20.04/22.04/24.04 LTS), sigue estos pasos para preparar el entorno e instalar el sistema:
+
+#### 1. Instalar dependencias del sistema (Git y Curl)
+```bash
+sudo apt update
+sudo apt install -y git curl
+```
+
+#### 2. Instalar Docker y Docker Compose (Plugin)
+Recomendamos instalar Docker desde el repositorio oficial mediante su script de conveniencia:
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+Verifica que Docker y el plugin Compose estén instalados correctamente:
+```bash
+docker --version
+docker compose version
+```
+
+#### 3. Configurar Permisos de Docker (Opcional pero Recomendado)
+To be able to run Docker commands without using `sudo`:
+```bash
+sudo usermod -aG docker $USER
+```
+> ⚠️ **Importante:** Para que este cambio tenga efecto, cierra la sesión SSH y vuelve a conectarte, o ejecuta `newgrp docker`.
+
+#### 4. Clonar el Repositorio y Configurar el .env
+Clona el repositorio utilizando la URL correcta:
+```bash
+git clone https://github.com/Alan-Azeim-Rdz/SIGD_Empresarials.git
+cd SIGD_Empresarials
+```
+Sigue el **Paso 2** de la guía general para crear y configurar tu archivo `.env`.
+
+#### 5. Configurar el Cortafuegos (UFW)
+Asegúrate de permitir el tráfico en los puertos que utiliza el sistema:
+```bash
+# Permitir acceso al Módulo Central (.NET MVC)
+sudo ufw allow 5000/tcp
+# Permitir acceso al Módulo de Reportes (PHP/Nginx)
+sudo ufw allow 8000/tcp
+# Permitir acceso a la API de Búsqueda (Node.js) - Opcional
+sudo ufw allow 3000/tcp
+```
+
+#### 6. Levantar el Sistema en Segundo Plano (Detached)
+El script de administración ya está diseñado para ejecutar los contenedores en segundo plano (`-d`):
+```bash
+chmod +x start-sigd.sh
+./start-sigd.sh start
+```
+Puedes monitorear el progreso levantando los logs:
+```bash
+./start-sigd.sh logs
+```
 
 ### Paso 5 — Verificar que todos los servicios estén activos
 
@@ -352,7 +411,7 @@ Cuando un documento alcanza una nueva versión vigente (ej. pasa de `1.0` a `2.0
 ## 📁 Estructura del Repositorio
 
 ```
-SIGD_Empresarial/
+SIGD_Empresarials/
 │
 ├── 📄 docker-compose.central.yml   # Módulo Central + SQL Server
 ├── 📄 docker-compose.reportes.yml  # Módulo Reportes + PostgreSQL + Nginx
@@ -707,8 +766,8 @@ docker exec -it app_reportes_php ./vendor/bin/phpunit tests/
 |-------|---------|
 | **Materia** | Proyecto Final de Ingeniería en Informática |
 | **Tipo** | Sistema web empresarial con arquitectura de microservicios |
-| **Repositorio** | [github.com/Alan-Azeim-Rdz/SIGD_Empresarial](https://github.com/Alan-Azeim-Rdz/SIGD_Empresarial) |
-| **Rama principal** | `development` |
+| **Repositorio** | [github.com/Alan-Azeim-Rdz/SIGD_Empresarials](https://github.com/Alan-Azeim-Rdz/SIGD_Empresarials) |
+| **Rama principal** | `main` |
 
 ### Objetivos del proyecto
 
