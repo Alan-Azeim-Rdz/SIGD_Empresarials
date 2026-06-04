@@ -133,6 +133,37 @@ Antes de levantar el proyecto asegúrate de tener instalado:
 - 💾 **Disco:** ~5 GB libres (imágenes Docker + datos)
 - 🖥️ **OS:** Windows 10/11, macOS 12+, Ubuntu 20.04+
 
+### 🪟 Instalación de Docker y Git en Windows
+
+Si no tienes Docker ni Git instalados en Windows, sigue estos pasos para configurar tu entorno:
+
+#### 1. Habilitar WSL 2 (Windows Subsystem for Linux)
+Docker Desktop en Windows funciona de manera óptima utilizando WSL 2 como motor de virtualización.
+1. Abre **PowerShell** o el **Símbolo del sistema** como **Administrador**.
+2. Ejecuta el siguiente comando para instalar WSL y la distribución por defecto (Ubuntu):
+   ```powershell
+   wsl --install
+   ```
+3. **Reinicia tu computadora** para aplicar los cambios de virtualización y WSL.
+
+#### 2. Instalar Docker Desktop
+Puedes instalar Docker Desktop de dos formas:
+
+- **Opción A (Recomendada): Usando Windows Package Manager (Winget)**
+  Abre PowerShell o CMD y ejecuta:
+  ```powershell
+  winget install Docker.DockerDesktop
+  ```
+- **Opción B: Instalador manual**
+  Descarga el instalador oficial desde [Docker Desktop para Windows](https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe) y ejecútalo. Asegúrate de dejar activada la opción **"Use WSL 2 instead of Hyper-V"** durante el asistente.
+
+#### 3. Instalar Git
+Si aún no tienes Git instalado en tu sistema, puedes instalarlo rápidamente ejecutando:
+```powershell
+winget install Git.Git
+```
+O descargando el instalador tradicional desde la página oficial de [Git for Windows](https://git-scm.com/download/win).
+
 ---
 
 ## 🚀 Instalación y Puesta en Marcha
