@@ -17,13 +17,16 @@ namespace Gestion_de_Documentos.Controllers
     {
         private readonly DirContext _context;
         private readonly Gestion_de_Documentos.Services.ReportesIntegrationService _reportesService;
+        private readonly Gestion_de_Documentos.Services.BusquedaIntegrationService _busquedaService;
 
         public SuperAdminController(
             DirContext context,
-            Gestion_de_Documentos.Services.ReportesIntegrationService reportesService)
+            Gestion_de_Documentos.Services.ReportesIntegrationService reportesService,
+            Gestion_de_Documentos.Services.BusquedaIntegrationService busquedaService)
         {
             _context = context;
             _reportesService = reportesService;
+            _busquedaService = busquedaService;
         }
 
         private int GetCurrentUserId()
@@ -262,6 +265,175 @@ namespace Gestion_de_Documentos.Controllers
                 count++;
             }
             return finalSlug;
+        }
+        #endregion
+
+        #region GESTIÓN GLOBAL DE USUARIOS
+        [HttpGet]
+        public async Task<IActionResult> Usuarios(int? idEmpresa, int? idRol, bool? estatus)
+        {
+            var query = _context.Usuarios
+                .Include(u => u.IdEmpresaNavigation)
+                .Include(u => u.IdDepartamentoNavigation)
+                .Include(u => u.UsuarioRolIdUsuarioNavigations)
+                    .ThenInclude(ur => ur.IdRolNavigation)
+                .AsQueryable();
+
+            if (idEmpresa.HasValue)
+            {
+                query = query.Where(u => u.IdEmpresa == idEmpresa.Value);
+            }
+
+            if (idRol.HasValue)
+            {
+                query = query.Where(u => u.UsuarioRolIdUsuarioNavigations.Any(ur => ur.IdRol == idRol.Value && ur.Estatus == true));
+            }
+
+            if (estatus.HasValue)
+            {
+                query = query.Where(u => u.Estatus == estatus.Value);
+            }
+
+            var usuarios = await query.OrderBy(u => u.Nombre).ToListAsync();
+
+            ViewBag.Empresas = await _context.Empresas.Where(e => e.Estatus == true).ToListAsync();
+            ViewBag.Roles = await _context.Rols.Where(r => r.Estatus == true && r.Nombre != "Super Administrador").ToListAsync();
+            
+            ViewBag.FiltroEmpresa = idEmpresa;
+            ViewBag.FiltroRol = idRol;
+            ViewBag.FiltroEstatus = estatus;
+
+            return View(usuarios);
+        }
+        #endregion
+
+        #region GESTIÓN GLOBAL DE DOCUMENTOS
+        [HttpGet]
+        public async Task<IActionResult> Documentos(int? idEmpresa, string? estadoActual, int? idTipoDocumento, int page = 1)
+        {
+            if (page < 1) page = 1;
+            int pageSize = 6;
+
+            var query = _context.Documentos
+                .Include(d => d.IdEmpresaNavigation)
+                .Include(d => d.IdDepartamentoNavigation)
+                .Include(d => d.IdTipoDocumentoNavigation)
+                .Include(d => d.IdUsuarioCreacionNavigation)
+                .Where(d => d.Estatus == true)
+                .AsQueryable();
+
+            if (idEmpresa.HasValue)
+            {
+                query = query.Where(d => d.IdEmpresa == idEmpresa.Value);
+            }
+
+            if (!string.IsNullOrEmpty(estadoActual))
+            {
+                query = query.Where(d => d.EstadoActual == estadoActual);
+            }
+
+            if (idTipoDocumento.HasValue)
+            {
+                query = query.Where(d => d.IdTipoDocumento == idTipoDocumento.Value);
+            }
+
+            int totalDocs = await query.CountAsync();
+            var documentos = await query
+                .OrderByDescending(d => d.FechaCreacion)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            ViewBag.Empresas = await _context.Empresas.Where(e => e.Estatus == true).ToListAsync();
+            ViewBag.TiposDocumento = await _context.TipoDocumentos.Where(t => t.Estatus == true).ToListAsync();
+
+            ViewBag.FiltroEmpresa = idEmpresa;
+            ViewBag.FiltroEstado = estadoActual;
+            ViewBag.FiltroTipo = idTipoDocumento;
+
+            ViewBag.CurrentPage = page;
+            ViewBag.TotalPages = (int)Math.Ceiling((double)totalDocs / pageSize);
+            ViewBag.TotalItems = totalDocs;
+            ViewBag.PageSize = pageSize;
+
+            return View(documentos);
+        }
+        #endregion
+
+        #region INSPECCIÓN DE METADATOS
+        [HttpGet]
+        public async Task<IActionResult> VerMetadataDocumento(int id)
+        {
+            var doc = await _context.Documentos
+                .Include(d => d.IdEmpresaNavigation)
+                .Include(d => d.IdDepartamentoNavigation)
+                .Include(d => d.IdTipoDocumentoNavigation)
+                .Include(d => d.IdUsuarioCreacionNavigation)
+                .Include(d => d.DocumentoVersions.Where(v => v.Estatus == true))
+                .FirstOrDefaultAsync(d => d.Id == id && d.Estatus == true);
+
+            if (doc == null)
+            {
+                return NotFound("Documento no encontrado o inactivo.");
+            }
+
+            // Ordenamos versiones descendentemente
+            doc.DocumentoVersions = doc.DocumentoVersions.OrderByDescending(v => v.NumeroVersion).ThenByDescending(v => v.VersionMinor).ToList();
+
+            // Metadatos MongoDB
+            string? rawMongoJson = null;
+            if (doc.IdEmpresa.HasValue)
+            {
+                rawMongoJson = await _busquedaService.ObtenerMetadatosMongoDBAsync(doc.Id, doc.IdEmpresa.Value);
+            }
+            
+            ViewBag.RawMongoJson = rawMongoJson;
+
+            return View(doc);
+        }
+        #endregion
+
+        #region ELIMINACIÓN DE DOCUMENTOS
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EliminarDocumento(int id)
+        {
+            var userId = GetCurrentUserId();
+            var doc = await _context.Documentos
+                .Include(d => d.DocumentoVersions)
+                .FirstOrDefaultAsync(d => d.Id == id && d.Estatus == true);
+
+            if (doc == null) return NotFound();
+
+            // Borrado lógico del documento
+            doc.Estatus = false;
+            doc.EstadoActual = "Eliminado";
+            doc.FechaModificacion = DateTime.Now;
+            doc.IdUsuarioModificacion = userId;
+
+            // Borrado lógico de todas sus versiones
+            foreach (var v in doc.DocumentoVersions)
+            {
+                v.Estatus = false;
+                v.FechaModificacion = DateTime.Now;
+                v.IdUsuarioModificacion = userId;
+            }
+
+            await _context.SaveChangesAsync();
+
+            // Desindexar de búsqueda y reportes
+            try
+            {
+                await _busquedaService.DesindexarDocumentoAsync(doc.Id);
+                await _reportesService.EliminarDocumentoAsync(doc.Id);
+            }
+            catch (Exception)
+            {
+                // Ignorar o registrar errores de comunicación con microservicios
+            }
+
+            TempData["SuccessMessage"] = $"El documento '{doc.Titulo}' ha sido eliminado correctamente.";
+            return RedirectToAction(nameof(Documentos));
         }
         #endregion
     }

@@ -442,7 +442,8 @@ namespace Gestion_de_Documentos.Controllers
                 return NotFound();
 
             var doc = version.IdDocumentoNavigation;
-            if (doc == null || doc.Estatus == false || doc.IdEmpresa != empresaId)
+            var esSuperAdmin = User.IsInRole("Super Administrador");
+            if (doc == null || doc.Estatus == false || (!esSuperAdmin && doc.IdEmpresa != empresaId))
                 return NotFound();
 
             if (!esAdminOrAuditor)
@@ -493,7 +494,8 @@ namespace Gestion_de_Documentos.Controllers
                 return NotFound();
 
             var doc = version.IdDocumentoNavigation;
-            if (doc == null || doc.Estatus == false || doc.IdEmpresa != empresaId)
+            var esSuperAdmin = User.IsInRole("Super Administrador");
+            if (doc == null || doc.Estatus == false || (!esSuperAdmin && doc.IdEmpresa != empresaId))
                 return NotFound();
 
             if (!esAdminOrAuditor)

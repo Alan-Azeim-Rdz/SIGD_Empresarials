@@ -73,8 +73,7 @@
                                 <i class="fas fa-home"></i>Inicio
                             </a>
                         </li>
-
-                        @if (User.Identity!.IsAuthenticated)
+                        @if (User.Identity!.IsAuthenticated && !User.IsInRole("Super Administrador"))
                         {
                             <li class="nav-item">
                                 <a class="nav-link" asp-controller="Documento" asp-action="Index">

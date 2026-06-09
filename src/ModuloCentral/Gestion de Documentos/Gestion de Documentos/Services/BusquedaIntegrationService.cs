@@ -170,5 +170,22 @@ namespace Gestion_de_Documentos.Services
                 return false;
             }
         }
+
+        public async Task<string?> ObtenerMetadatosMongoDBAsync(int idDocumento, int idEmpresa)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_busquedaBaseUrl}/documento/{idDocumento}?id_empresa={idEmpresa}");
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadAsStringAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al obtener metadatos de MongoDB para el documento {IdDoc} en la empresa {IdEmpresa}", idDocumento, idEmpresa);
+            }
+            return null;
+        }
     }
 }

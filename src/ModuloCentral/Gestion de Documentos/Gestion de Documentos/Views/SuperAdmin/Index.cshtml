@@ -17,6 +17,19 @@
         </a>
     </div>
 
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link active fw-bold" asp-action="Index"><i class="fas fa-industry me-1 text-jewel-sapphire"></i> Empresas</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link text-muted" asp-action="Usuarios"><i class="fas fa-users me-1"></i> Usuarios</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link text-muted" asp-action="Documentos"><i class="fas fa-file-pdf me-1"></i> Documentos</a>
+        </li>
+    </ul>
+
     <!-- Alert Success -->
     @if (TempData["SuccessMessage"] != null)
     {
@@ -26,7 +39,6 @@
         </div>
     }
 
-    <!-- Stat Cards -->
     <div class="row mb-4">
         <div class="col-md-3 mb-3">
             <div class="card border-0 shadow-sm border-start border-5 h-100" style="border-color: var(--jewel-sapphire) !important;">

@@ -1,0 +1,214 @@
+@model List<Gestion_de_Documentos.Models.Documento>
+@{
+    ViewData["Title"] = "Panel Súper Administrador - Documentos";
+}
+
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            <i class="fas fa-check-circle me-2"></i> @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold" style="color: var(--jewel-sapphire);">
+                <i class="fas fa-user-shield"></i> Panel Súper Administrador
+            </h2>
+            <p class="text-muted mb-0">Consola de administración global y monitoreo multi-tenant</p>
+        </div>
+        <a asp-action="CrearEmpresa" class="btn btn-jewel-primary px-4 py-2">
+            <i class="fas fa-plus"></i> Registrar Nueva Empresa
+        </a>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link text-muted" asp-action="Index"><i class="fas fa-industry me-1"></i> Empresas</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link text-muted" asp-action="Usuarios"><i class="fas fa-users me-1"></i> Usuarios</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active fw-bold" asp-action="Documentos"><i class="fas fa-file-pdf me-1 text-jewel-sapphire"></i> Documentos</a>
+        </li>
+    </ul>
+
+    <!-- Filters Card -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" asp-action="Documentos" class="row align-items-end g-3">
+                <div class="col-md-4">
+                    <label for="idEmpresa" class="form-label fw-bold text-secondary">Empresa</label>
+                    <select name="idEmpresa" id="idEmpresa" class="form-select">
+                        <option value="">-- Todas las Empresas --</option>
+                        @foreach (var emp in ViewBag.Empresas)
+                        {
+                            <!option value="@emp.Id" @(ViewBag.FiltroEmpresa == emp.Id ? "selected" : "")>@emp.Nombre</!option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="idTipoDocumento" class="form-label fw-bold text-secondary">Tipo de Documento</label>
+                    <select name="idTipoDocumento" id="idTipoDocumento" class="form-select">
+                        <option value="">-- Todos los Tipos --</option>
+                        @foreach (var tipo in ViewBag.TiposDocumento)
+                        {
+                            <!option value="@tipo.Id" @(ViewBag.FiltroTipo == tipo.Id ? "selected" : "")>@tipo.Nombre</!option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="estadoActual" class="form-label fw-bold text-secondary">Estado Actual</label>
+                    <select name="estadoActual" id="estadoActual" class="form-select">
+                        <option value="">-- Todos los Estados --</option>
+                        <!option value="Borrador" @(ViewBag.FiltroEstado == "Borrador" ? "selected" : "")>Borrador</!option>
+                        <!option value="En Revision" @(ViewBag.FiltroEstado == "En Revision" ? "selected" : "")>En Revisión</!option>
+                        <!option value="Vigente" @(ViewBag.FiltroEstado == "Vigente" ? "selected" : "")>Vigente</!option>
+                        <!option value="Rechazado" @(ViewBag.FiltroEstado == "Rechazado" ? "selected" : "")>Rechazado</!option>
+                        <!option value="Obsoleto" @(ViewBag.FiltroEstado == "Obsoleto" ? "selected" : "")>Obsoleto</!option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-jewel-primary w-100">
+                        <i class="fas fa-filter"></i> Filtrar
+                    </button>
+                    <a asp-action="Documentos" class="btn btn-outline-secondary w-100" title="Limpiar Filtros">
+                        <i class="fas fa-undo"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content Card -->
+    <div class="card card-jewel">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 text-dark fw-bold">
+                <i class="fas fa-file-pdf me-1 text-jewel-sapphire"></i> Documentos Registrados (Todos los Tenants)
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="font-size: .9rem;">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th class="ps-4">Código</th>
+                            <th>Título</th>
+                            <th>Empresa</th>
+                            <th>Tipo</th>
+                            <th>Departamento</th>
+                            <th>Creado Por</th>
+                            <th class="text-center">Estado</th>
+                            <th>Fecha Registro</th>
+                            <th class="text-end pe-4" style="width: 220px;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Any())
+                        {
+                            foreach (var doc in Model)
+                            {
+                                var badgeClass = doc.EstadoActual switch
+                                {
+                                    "Borrador" => "badge-borrador",
+                                    "En Revision" => "badge-revision",
+                                    "Vigente" => "badge-aprobado",
+                                    "Rechazado" => "bg-danger",
+                                    "Obsoleto" => "badge-obsoleto",
+                                    _ => "bg-secondary"
+                                };
+                                
+                                <tr>
+                                    <td class="ps-4"><code class="px-2 py-1 bg-light rounded text-jewel-sapphire">@doc.CodigoInterno</code></td>
+                                    <td class="fw-semibold text-dark">@doc.Titulo</td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">
+                                            @(doc.IdEmpresaNavigation?.Nombre ?? "Global / Sin Asignar")
+                                        </span>
+                                    </td>
+                                    <td>@(doc.IdTipoDocumentoNavigation?.Nombre ?? "-")</td>
+                                    <td>@(doc.IdDepartamentoNavigation?.Nombre ?? "-")</td>
+                                    <td>@(doc.IdUsuarioCreacionNavigation?.Nombre) @(doc.IdUsuarioCreacionNavigation?.ApellidoP)</td>
+                                    <td class="text-center">
+                                        <span class="badge @badgeClass px-2 py-1">@doc.EstadoActual</span>
+                                    </td>
+                                    <td>@doc.FechaCreacion?.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td class="text-end pe-4">
+                                        <a asp-action="VerMetadataDocumento" asp-route-id="@doc.Id" class="btn btn-outline-primary btn-sm me-1" title="Inspeccionar Metadatos Crudos">
+                                            <i class="fas fa-search"></i> Metadatos
+                                        </a>
+                                        @if (doc.EstadoActual == "Vigente")
+                                        {
+                                            <a asp-controller="Documento" asp-action="DescargarUltima" asp-route-id="@doc.Id" class="btn btn-success btn-sm me-1" title="Descargar PDF">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                        }
+                                        <form asp-action="EliminarDocumento" asp-route-id="@doc.Id" method="post" style="display:inline;" onsubmit="return confirm('¿Está seguro de que desea eliminar este documento? Esta acción no se puede deshacer.');">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar Documento">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="10" class="text-center py-5 text-muted">
+                                    <i class="fas fa-file-excel fa-3x mb-3"></i>
+                                    <h5>No se encontraron documentos con los filtros seleccionados</h5>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if (ViewBag.TotalPages > 1)
+        {
+            <div class="card-footer bg-white d-flex justify-content-between align-items-center py-3 border-top">
+                <div class="text-muted small">
+                    Mostrando @Model.Count de @ViewBag.TotalItems documentos (Página @ViewBag.CurrentPage de @ViewBag.TotalPages)
+                </div>
+                <nav aria-label="Navegación de documentos">
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item @(ViewBag.CurrentPage == 1 ? "disabled" : "")">
+                            <a class="page-link shadow-none" asp-action="Documentos" 
+                               asp-route-idEmpresa="@ViewBag.FiltroEmpresa" 
+                               asp-route-estadoActual="@ViewBag.FiltroEstado" 
+                               asp-route-idTipoDocumento="@ViewBag.FiltroTipo" 
+                               asp-route-page="@(ViewBag.CurrentPage - 1)">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                        </li>
+                        @for (int i = 1; i <= ViewBag.TotalPages; i++)
+                        {
+                            <li class="page-item @(ViewBag.CurrentPage == i ? "active" : "")">
+                                <a class="page-link shadow-none" asp-action="Documentos" 
+                                   asp-route-idEmpresa="@ViewBag.FiltroEmpresa" 
+                                   asp-route-estadoActual="@ViewBag.FiltroEstado" 
+                                   asp-route-idTipoDocumento="@ViewBag.FiltroTipo" 
+                                   asp-route-page="@i">@i</a>
+                            </li>
+                        }
+                        <li class="page-item @(ViewBag.CurrentPage == ViewBag.TotalPages ? "disabled" : "")">
+                            <a class="page-link shadow-none" asp-action="Documentos" 
+                               asp-route-idEmpresa="@ViewBag.FiltroEmpresa" 
+                               asp-route-estadoActual="@ViewBag.FiltroEstado" 
+                               asp-route-idTipoDocumento="@ViewBag.FiltroTipo" 
+                               asp-route-page="@(ViewBag.CurrentPage + 1)">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        }
+    </div>
+</div>
