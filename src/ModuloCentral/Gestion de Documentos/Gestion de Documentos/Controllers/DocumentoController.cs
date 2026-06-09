@@ -42,25 +42,32 @@ namespace Gestion_de_Documentos.Controllers
         {
             var userId = GetCurrentUserId();
             var empresaId = GetCurrentUserEmpresaId();
-            var esAdminOrAuditor = User.IsInRole("Administrador") || User.IsInRole("Superior") || User.IsInRole("Super Administrador") || User.IsInRole("Auditor");
             const int porPagina = 10;
 
             IQueryable<Documento> query;
 
-            if (esAdminOrAuditor)
+            var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
+            var userDeptoId = user?.IdDepartamento;
+
+            if (User.IsInRole("Administrador") || User.IsInRole("Super Administrador"))
             {
+                // Administradores see all active documents of the company
                 query = _context.Documentos
-                    .Where(d => d.Estatus == true && d.IdEmpresa == empresaId &&
+                    .Where(d => d.Estatus == true && d.IdEmpresa == empresaId);
+            }
+            else if (User.IsInRole("Auditor") || User.IsInRole("Superior"))
+            {
+                // Auditor and Superior can only see documents belonging to their own department/area
+                query = _context.Documentos
+                    .Where(d => d.Estatus == true && d.IdEmpresa == empresaId && d.IdDepartamento == userDeptoId &&
                         (d.EstadoActual != "En Revision" ||
                          d.IdUsuarioCreacion == userId ||
-                         d.DocumentoVersions.Any(v => v.FlujoAprobacions.Any(f => f.IdUsuarioAsignado == userId && (f.EstadoFirma == "Firmado" || f.EstadoFirma == "Rechazado")))
-                        ));
+                         d.DocumentoVersions.Any(v => v.FlujoAprobacions.Any(f => f.IdUsuarioAsignado == userId)))
+                    );
             }
             else
             {
-                var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
-                var userDeptoId = user?.IdDepartamento;
-
+                // Usuario (standard user) sees their own drafts, or Vigente documents of their department, or pending assignments
                 var pendingDocIds = await _context.FlujoAprobacions
                     .Where(f => f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true)
                     .Select(f => f.IdVersionDocumentoNavigation.IdDocumento)
@@ -96,8 +103,17 @@ namespace Gestion_de_Documentos.Controllers
 
         public async Task<IActionResult> Crear()
         {
+            var userId = GetCurrentUserId();
+            var user = await _context.Usuarios
+                .Include(u => u.IdDepartamentoNavigation)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
             ViewBag.TiposDocumento = await _context.TipoDocumentos.Where(t => t.Estatus == true).ToListAsync();
             ViewBag.Departamentos = await _context.Departamentos.Where(d => d.Estatus == true).ToListAsync();
+
+            ViewBag.UserDeptoId = user?.IdDepartamento;
+            ViewBag.UserDeptoNombre = user?.IdDepartamentoNavigation?.Nombre ?? "Sin Departamento";
+
             return View();
         }
 
@@ -130,6 +146,13 @@ namespace Gestion_de_Documentos.Controllers
                 var userId = GetCurrentUserId();
                 var empresaId = GetCurrentUserEmpresaId();
                 
+                // Enforce department restriction if not Admin
+                if (!User.IsInRole("Administrador") && !User.IsInRole("Super Administrador"))
+                {
+                    var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
+                    doc.IdDepartamento = user?.IdDepartamento ?? 0;
+                }
+
                 // 1. Guardar el archivo en MongoDB GridFS
                 using var stream = archivoPdf.OpenReadStream();
                 var objectIdStr = await _gridFsService.SubirArchivoAsync(stream, archivoPdf.FileName, archivoPdf.ContentType);
@@ -183,6 +206,10 @@ namespace Gestion_de_Documentos.Controllers
         public async Task<IActionResult> Editar(int id)
         {
             var userId = GetCurrentUserId();
+            var user = await _context.Usuarios
+                .Include(u => u.IdDepartamentoNavigation)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
             var doc = await _context.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.IdUsuarioCreacion == userId && d.Estatus == true);
 
             if (doc == null || doc.EstadoActual != "Borrador")
@@ -190,6 +217,10 @@ namespace Gestion_de_Documentos.Controllers
 
             ViewBag.TiposDocumento = await _context.TipoDocumentos.Where(t => t.Estatus == true).ToListAsync();
             ViewBag.Departamentos = await _context.Departamentos.Where(d => d.Estatus == true).ToListAsync();
+
+            ViewBag.UserDeptoId = user?.IdDepartamento;
+            ViewBag.UserDeptoNombre = user?.IdDepartamentoNavigation?.Nombre ?? "Sin Departamento";
+
             return View(doc);
         }
 
@@ -222,7 +253,16 @@ namespace Gestion_de_Documentos.Controllers
                 doc.CodigoInterno = model.CodigoInterno;
                 doc.Titulo = model.Titulo;
                 doc.IdTipoDocumento = model.IdTipoDocumento;
-                doc.IdDepartamento = model.IdDepartamento;
+
+                if (User.IsInRole("Administrador") || User.IsInRole("Super Administrador"))
+                {
+                    doc.IdDepartamento = model.IdDepartamento;
+                }
+                else
+                {
+                    var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
+                    doc.IdDepartamento = user?.IdDepartamento ?? 0;
+                }
                 
                 doc.FechaModificacion = DateTime.Now;
                 doc.IdUsuarioModificacion = userId;
@@ -405,20 +445,33 @@ namespace Gestion_de_Documentos.Controllers
             if (doc == null)
                 return NotFound();
 
-            if (!esAdminOrAuditor)
+            var esSuperAdmin = User.IsInRole("Super Administrador");
+            var esAdmin = User.IsInRole("Administrador") || esSuperAdmin;
+
+            if (!esAdmin)
             {
                 var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
                 var userDeptoId = user?.IdDepartamento;
 
-                bool isCreator = doc.IdUsuarioCreacion == userId;
-                bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
-                bool isAssignedReviewer = doc.DocumentoVersions
-                    .SelectMany(v => v.FlujoAprobacions)
-                    .Any(f => f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
-
-                if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
+                if (User.IsInRole("Auditor") || User.IsInRole("Superior"))
                 {
-                    return RedirectToAction("AccesoDenegado", "Auth");
+                    if (doc.IdDepartamento != userDeptoId)
+                    {
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                    }
+                }
+                else // Usuario
+                {
+                    bool isCreator = doc.IdUsuarioCreacion == userId;
+                    bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
+                    bool isAssignedReviewer = doc.DocumentoVersions
+                        .SelectMany(v => v.FlujoAprobacions)
+                        .Any(f => f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
+
+                    if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
+                    {
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                    }
                 }
             }
 
@@ -431,7 +484,6 @@ namespace Gestion_de_Documentos.Controllers
         public async Task<IActionResult> Descargar(int versionId)
         {
             var userId = GetCurrentUserId();
-            var esAdminOrAuditor = User.IsInRole("Administrador") || User.IsInRole("Superior") || User.IsInRole("Super Administrador") || User.IsInRole("Auditor");
             var empresaId = GetCurrentUserEmpresaId();
 
             var version = await _context.DocumentoVersions
@@ -446,19 +498,31 @@ namespace Gestion_de_Documentos.Controllers
             if (doc == null || doc.Estatus == false || (!esSuperAdmin && doc.IdEmpresa != empresaId))
                 return NotFound();
 
-            if (!esAdminOrAuditor)
+            var esAdmin = User.IsInRole("Administrador") || esSuperAdmin;
+
+            if (!esAdmin)
             {
                 var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
                 var userDeptoId = user?.IdDepartamento;
 
-                bool isCreator = doc.IdUsuarioCreacion == userId;
-                bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
-                bool isAssignedReviewer = await _context.FlujoAprobacions
-                    .AnyAsync(f => f.IdVersionDocumento == version.Id && f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
-
-                if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
+                if (User.IsInRole("Auditor") || User.IsInRole("Superior"))
                 {
-                    return RedirectToAction("AccesoDenegado", "Auth");
+                    if (doc.IdDepartamento != userDeptoId)
+                    {
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                    }
+                }
+                else // Usuario
+                {
+                    bool isCreator = doc.IdUsuarioCreacion == userId;
+                    bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
+                    bool isAssignedReviewer = await _context.FlujoAprobacions
+                        .AnyAsync(f => f.IdVersionDocumento == version.Id && f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
+
+                    if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
+                    {
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                    }
                 }
             }
 
@@ -483,7 +547,6 @@ namespace Gestion_de_Documentos.Controllers
         public async Task<IActionResult> VerPrevio(int versionId)
         {
             var userId = GetCurrentUserId();
-            var esAdminOrAuditor = User.IsInRole("Administrador") || User.IsInRole("Superior") || User.IsInRole("Super Administrador") || User.IsInRole("Auditor");
             var empresaId = GetCurrentUserEmpresaId();
 
             var version = await _context.DocumentoVersions
@@ -498,18 +561,30 @@ namespace Gestion_de_Documentos.Controllers
             if (doc == null || doc.Estatus == false || (!esSuperAdmin && doc.IdEmpresa != empresaId))
                 return NotFound();
 
-            if (!esAdminOrAuditor)
+            var esAdmin = User.IsInRole("Administrador") || esSuperAdmin;
+
+            if (!esAdmin)
             {
                 var user = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == userId);
                 var userDeptoId = user?.IdDepartamento;
 
-                bool isCreator = doc.IdUsuarioCreacion == userId;
-                bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
-                bool isAssignedReviewer = await _context.FlujoAprobacions
-                    .AnyAsync(f => f.IdVersionDocumento == version.Id && f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
+                if (User.IsInRole("Auditor") || User.IsInRole("Superior"))
+                {
+                    if (doc.IdDepartamento != userDeptoId)
+                    {
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                    }
+                }
+                else // Usuario
+                {
+                    bool isCreator = doc.IdUsuarioCreacion == userId;
+                    bool isDepartmentVigente = doc.IdDepartamento == userDeptoId && doc.EstadoActual == "Vigente";
+                    bool isAssignedReviewer = await _context.FlujoAprobacions
+                        .AnyAsync(f => f.IdVersionDocumento == version.Id && f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true);
 
-                if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
-                    return RedirectToAction("AccesoDenegado", "Auth");
+                    if (!isCreator && !isDepartmentVigente && !isAssignedReviewer)
+                        return RedirectToAction("AccesoDenegado", "Auth");
+                }
             }
 
             try

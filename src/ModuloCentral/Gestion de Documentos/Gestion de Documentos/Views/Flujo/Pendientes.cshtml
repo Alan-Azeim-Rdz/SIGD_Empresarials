@@ -114,6 +114,26 @@ else
                                           placeholder="Añade tus observaciones aquí..."
                                           style="font-size: .85rem; resize: none;" required></textarea>
                             </div>
+
+                            @if (flujo.TipoAccion == "Revisión")
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label text-secondary fw-bold" style="font-size: .82rem;">Asignar Superior para Firma (Requerido al Aprobar)</label>
+                                    <select name="idSuperior" class="form-select select-superior" style="font-size: .85rem;">
+                                        <option value="">-- Selecciona a un Superior o Administrador --</option>
+                                        @{
+                                            var map = ViewBag.SuperiorsMap as Dictionary<int, List<Usuario>>;
+                                            if (map != null && map.ContainsKey(flujo.Id))
+                                            {
+                                                foreach (var sup in map[flujo.Id])
+                                                {
+                                                    <option value="@sup.Id">@sup.Nombre @sup.ApellidoP</option>
+                                                }
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                            }
                             
                             <div class="form-check mb-3">
                                 <input class="form-check-input check-leido" type="checkbox" id="checkLeido-@flujo.Id" data-target="btnGroup-@flujo.Id" disabled>
@@ -198,6 +218,20 @@ else
 
             let currentFlujoId = null;
             let currentVersionId = null;
+
+            // Validar selección de Superior antes de Aprobar
+            document.querySelectorAll('form[id^="formAprobacion-"]').forEach(form => {
+                form.addEventListener('submit', function (e) {
+                    const actionButton = document.activeElement;
+                    if (actionButton && actionButton.value === 'Aprobar') {
+                        const selectSuperior = form.querySelector('.select-superior');
+                        if (selectSuperior && !selectSuperior.value) {
+                            e.preventDefault();
+                            alert('Debe seleccionar un Superior o Administrador para enviar a firma.');
+                        }
+                    }
+                });
+            });
 
             function registrarLectura() {
                 if (iframe.src === 'about:blank' || !currentVersionId) return;

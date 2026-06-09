@@ -62,7 +62,7 @@ namespace Gestion_de_Documentos.Controllers
                               : ur.IdUsuarioNavigation.IdEmpresa == empresaId)
                           && (
                               ur.IdRolNavigation.Nombre == "Administrador"
-                              || (ur.IdRolNavigation.Nombre == "Superior" && ur.IdUsuarioNavigation.IdDepartamento == doc.IdDepartamento)
+                              || (ur.IdRolNavigation.Nombre == "Auditor" && ur.IdUsuarioNavigation.IdDepartamento == doc.IdDepartamento)
                              ))
                 .Select(ur => new RevisorDto
                 {
@@ -95,7 +95,7 @@ namespace Gestion_de_Documentos.Controllers
 
             var empresaId = doc.IdEmpresa ?? GetCurrentUserEmpresaId();
 
-            // Validar que el revisor elegido exista y tenga rol válido (Administrador de la misma empresa o Superior del mismo departamento/empresa)
+            // Validar que el revisor elegido exista y tenga rol válido (Administrador de la misma empresa o Auditor del mismo departamento/empresa)
             var revisorValido = await _context.UsuarioRols
                 .Include(ur => ur.IdUsuarioNavigation)
                 .Include(ur => ur.IdRolNavigation)
@@ -107,7 +107,7 @@ namespace Gestion_de_Documentos.Controllers
                                  : ur.IdUsuarioNavigation.IdEmpresa == empresaId)
                              && (
                                  ur.IdRolNavigation.Nombre == "Administrador"
-                                 || (ur.IdRolNavigation.Nombre == "Superior" && ur.IdUsuarioNavigation.IdDepartamento == doc.IdDepartamento)
+                                 || (ur.IdRolNavigation.Nombre == "Auditor" && ur.IdUsuarioNavigation.IdDepartamento == doc.IdDepartamento)
                                 ));
 
             if (!revisorValido) return BadRequest("El usuario seleccionado no es un revisor válido.");
@@ -134,7 +134,7 @@ namespace Gestion_de_Documentos.Controllers
             return RedirectToAction("Detalle", "Documento", new { id = doc.Id });
         }
 
-        [Authorize(Roles = "Administrador, Superior")]
+        [Authorize(Roles = "Administrador, Superior, Auditor")]
         public async Task<IActionResult> Pendientes()
         {
             var userId = GetCurrentUserId();
@@ -142,16 +142,50 @@ namespace Gestion_de_Documentos.Controllers
             var flujosPendientes = await _context.FlujoAprobacions
                 .Include(f => f.IdVersionDocumentoNavigation)
                     .ThenInclude(v => v.IdDocumentoNavigation)
+                        .ThenInclude(d => d.IdDepartamentoNavigation)
+                .Include(f => f.IdVersionDocumentoNavigation.IdDocumentoNavigation.IdEmpresaNavigation)
                 .Where(f => f.IdUsuarioAsignado == userId && f.EstadoFirma == "Pendiente" && f.Estatus == true)
                 .OrderBy(f => f.FechaCreacion)
                 .ToListAsync();
 
+            // Cargar superiores elegibles para flujos en etapa "Revisión" (Auditoría)
+            var superiorsMap = new Dictionary<int, List<Usuario>>();
+            foreach (var flujo in flujosPendientes)
+            {
+                if (flujo.TipoAccion == "Revisión")
+                {
+                    var doc = flujo.IdVersionDocumentoNavigation.IdDocumentoNavigation;
+                    var empresaId = doc.IdEmpresa ?? 0;
+                    var deptoId = doc.IdDepartamento;
+
+                    var eligibleSuperiors = await _context.UsuarioRols
+                        .Include(ur => ur.IdUsuarioNavigation)
+                        .Include(ur => ur.IdRolNavigation)
+                        .Where(ur => ur.Estatus != false 
+                                  && ur.IdUsuarioNavigation.Estatus != false
+                                  && (empresaId == 0 
+                                      ? ur.IdUsuarioNavigation.IdEmpresa == null 
+                                      : ur.IdUsuarioNavigation.IdEmpresa == empresaId)
+                                  && (
+                                      ur.IdRolNavigation.Nombre == "Administrador"
+                                      || (ur.IdRolNavigation.Nombre == "Superior" && ur.IdUsuarioNavigation.IdDepartamento == deptoId)
+                                     ))
+                        .Select(ur => ur.IdUsuarioNavigation)
+                        .Distinct()
+                        .ToListAsync();
+
+                    superiorsMap[flujo.Id] = eligibleSuperiors;
+                }
+            }
+
+            ViewBag.SuperiorsMap = superiorsMap;
             return View(flujosPendientes);
         }
 
         [HttpPost]
-        [Authorize(Roles = "Administrador, Superior")]
-        public async Task<IActionResult> Responder(int idFlujo, string respuesta, string comentarios)
+        [Authorize(Roles = "Administrador, Superior, Auditor")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Responder(int idFlujo, string respuesta, string comentarios, int? idSuperior)
         {
             var flujo = await _context.FlujoAprobacions
                 .Include(f => f.IdVersionDocumentoNavigation)
@@ -178,58 +212,117 @@ namespace Gestion_de_Documentos.Controllers
                 return BadRequest("Debe previsualizar el documento completo en el visor antes de poder tomar una decisión.");
             }
 
-            // Modificar el registro de flujo actual en lugar de crear un detalle
-            flujo.EstadoFirma = respuesta == "Aprobar" ? "Firmado" : "Rechazado";
-            flujo.Comentarios = comentarios;
-            flujo.FechaFirma = DateTime.Now;
-            flujo.IdUsuarioModificacion = userId;
-            flujo.FechaModificacion = DateTime.Now;
-            flujo.IpOrigenFirmante = HttpContext.Connection.RemoteIpAddress?.ToString();
+            var idDoc = flujo.IdVersionDocumentoNavigation.IdDocumento;
+            var doc = flujo.IdVersionDocumentoNavigation.IdDocumentoNavigation;
 
             if (respuesta == "Aprobar")
             {
-                var idDoc = flujo.IdVersionDocumentoNavigation.IdDocumento;
+                if (flujo.TipoAccion == "Revisión")
+                {
+                    if (!idSuperior.HasValue)
+                    {
+                        return BadRequest("Debe seleccionar un Superior o Administrador para enviar a firma.");
+                    }
 
-                // Calcular el siguiente NumeroVersion mayor
-                var maxAprobada = await _context.DocumentoVersions
-                    .Where(v => v.IdDocumento == idDoc && v.VersionMinor == 0 && v.Id != flujo.IdVersionDocumento)
-                    .Select(v => (int?)v.NumeroVersion)
-                    .MaxAsync() ?? 0;
+                    // Validar que el superior seleccionado sea válido
+                    var superiorValido = await _context.UsuarioRols
+                        .Include(ur => ur.IdUsuarioNavigation)
+                        .Include(ur => ur.IdRolNavigation)
+                        .AnyAsync(ur => ur.IdUsuario == idSuperior.Value 
+                                     && ur.Estatus != false 
+                                     && ur.IdUsuarioNavigation.Estatus != false
+                                     && (doc.IdEmpresa == null 
+                                         ? ur.IdUsuarioNavigation.IdEmpresa == null 
+                                         : ur.IdUsuarioNavigation.IdEmpresa == doc.IdEmpresa)
+                                     && (
+                                         ur.IdRolNavigation.Nombre == "Administrador"
+                                         || (ur.IdRolNavigation.Nombre == "Superior" && ur.IdUsuarioNavigation.IdDepartamento == doc.IdDepartamento)
+                                        ));
 
-                var siguienteMajor = maxAprobada + 1;
+                    if (!superiorValido)
+                    {
+                        return BadRequest("El Superior seleccionado no es válido o no pertenece a tu área.");
+                    }
 
-                flujo.IdVersionDocumentoNavigation.NumeroVersion = siguienteMajor;
-                flujo.IdVersionDocumentoNavigation.VersionMinor = 0;
+                    flujo.EstadoFirma = "Firmado";
+                    flujo.Comentarios = comentarios;
+                    flujo.FechaFirma = DateTime.Now;
+                    flujo.IdUsuarioModificacion = userId;
+                    flujo.FechaModificacion = DateTime.Now;
+                    flujo.IpOrigenFirmante = HttpContext.Connection.RemoteIpAddress?.ToString();
 
-                // El documento pasa a Vigente
-                flujo.IdVersionDocumentoNavigation.IdDocumentoNavigation.EstadoActual = "Vigente";
-                await _context.SaveChangesAsync();
-                
-                // Sincronizar con Módulo de Reportes (PostgreSQL/PHP)
-                await _reportesService.SincronizarDocumentoAsync(idDoc, userId);
+                    // Crear paso 2: Aprobación
+                    var nuevoFlujo = new FlujoAprobacion
+                    {
+                        IdVersionDocumento = flujo.IdVersionDocumento,
+                        IdUsuarioAsignado = idSuperior.Value,
+                        TipoAccion = "Aprobación",
+                        EstadoFirma = "Pendiente",
+                        Orden = 2,
+                        IdUsuarioCreacion = userId,
+                        FechaCreacion = DateTime.Now,
+                        Estatus = true,
+                        IpOrigenRemitente = HttpContext.Connection.RemoteIpAddress?.ToString()
+                    };
 
-                // Obtener IP del firmante
-                var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+                    _context.FlujoAprobacions.Add(nuevoFlujo);
+                    await _context.SaveChangesAsync();
 
-                // Sincronizar con Módulo de Búsqueda (MongoDB/Node.js)
-                await _busquedaService.SincronizarDocumentoAsync(idDoc, userId, ip);
+                    TempData["SuccessMessage"] = $"Documento revisado y enviado al Superior para su firma.";
+                }
+                else if (flujo.TipoAccion == "Aprobación")
+                {
+                    flujo.EstadoFirma = "Firmado";
+                    flujo.Comentarios = comentarios;
+                    flujo.FechaFirma = DateTime.Now;
+                    flujo.IdUsuarioModificacion = userId;
+                    flujo.FechaModificacion = DateTime.Now;
+                    flujo.IpOrigenFirmante = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+                    var maxAprobada = await _context.DocumentoVersions
+                        .Where(v => v.IdDocumento == idDoc && v.VersionMinor == 0 && v.Id != flujo.IdVersionDocumento)
+                        .Select(v => (int?)v.NumeroVersion)
+                        .MaxAsync() ?? 0;
+
+                    var siguienteMajor = maxAprobada + 1;
+
+                    flujo.IdVersionDocumentoNavigation.NumeroVersion = siguienteMajor;
+                    flujo.IdVersionDocumentoNavigation.VersionMinor = 0;
+
+                    doc.EstadoActual = "Vigente";
+                    await _context.SaveChangesAsync();
+
+                    // Sincronizar
+                    await _reportesService.SincronizarDocumentoAsync(idDoc, userId);
+                    var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+                    await _busquedaService.SincronizarDocumentoAsync(idDoc, userId, ip);
+
+                    TempData["SuccessMessage"] = $"El documento '{doc.Titulo}' ha sido firmado y publicado como Vigente.";
+                }
             }
-            else
+            else // Rechazar
             {
-                // El documento vuelve a estado Rechazado
-                flujo.IdVersionDocumentoNavigation.IdDocumentoNavigation.EstadoActual = "Rechazado";
+                flujo.EstadoFirma = "Rechazado";
+                flujo.Comentarios = comentarios;
+                flujo.FechaFirma = DateTime.Now;
+                flujo.IdUsuarioModificacion = userId;
+                flujo.FechaModificacion = DateTime.Now;
+                flujo.IpOrigenFirmante = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+                doc.EstadoActual = "Rechazado";
                 await _context.SaveChangesAsync();
 
-                // Desindexar de la búsqueda ya que no está Vigente
-                var idDoc = flujo.IdVersionDocumentoNavigation.IdDocumento;
+                // Desindexar
                 await _busquedaService.DesindexarDocumentoAsync(idDoc);
+
+                TempData["SuccessMessage"] = $"El documento ha sido rechazado.";
             }
 
             return RedirectToAction(nameof(Pendientes));
         }
 
         [HttpPost]
-        [Authorize(Roles = "Administrador, Superior")]
+        [Authorize(Roles = "Administrador, Superior, Auditor")]
         public async Task<IActionResult> DeshacerRespuesta(int idFlujo)
         {
             var flujo = await _context.FlujoAprobacions

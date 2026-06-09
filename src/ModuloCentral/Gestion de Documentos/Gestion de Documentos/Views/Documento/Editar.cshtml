@@ -38,13 +38,21 @@
                 </div>
                 <div class="col-md-6 mb-3">
                     <label asp-for="IdDepartamento" class="form-label fw-bold">Departamento Propietario</label>
-                    <select asp-for="IdDepartamento" class="form-select" required>
-                        <option value="">Seleccione...</option>
-                        @foreach(var depto in ViewBag.Departamentos)
-                        {
-                            <option value="@depto.Id">@depto.Nombre</option>
-                        }
-                    </select>
+                    @if (User.IsInRole("Administrador") || User.IsInRole("Super Administrador"))
+                    {
+                        <select asp-for="IdDepartamento" class="form-select" required>
+                            <option value="">Seleccione...</option>
+                            @foreach(var depto in ViewBag.Departamentos)
+                            {
+                                <option value="@depto.Id">@depto.Nombre</option>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <input type="text" class="form-control" value="@ViewBag.UserDeptoNombre" readonly disabled />
+                        <input type="hidden" name="IdDepartamento" value="@ViewBag.UserDeptoId" />
+                    }
                 </div>
             </div>
 
